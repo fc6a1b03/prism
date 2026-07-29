@@ -73,6 +73,10 @@ intellijPlatform {
         version = project.version.toString()
         // sinceBuild 自 IGP 2.14 起默认取目标平台 major build（2026.2 → 262），无需显式声明
         changeNotes = """
+            <b>0.19.1</b>
+            <ul>
+                <li>安全防御：开启 fastjson2 SafeMode（-Dfastjson2.parser.safeMode=true），防范 fastjson2 ≤ 2.0.62 的 AutoType 校验绕过 RCE（XVE-2026-42782, CVSS 9.8）。</li>
+            </ul>
             <b>0.19.0</b>
             <ul>
                 <li>插件更名：Json Helper → <b>Prism</b>。功能早已超出 JSON（代码地图、彩虹高亮、项目树信息、截图、搜索等），新名取"棱镜分光"之意。插件 id 同步变更（com.acme.prism），安装前请先卸载旧版 Json Helper；用户配置全部保留。</li>
@@ -139,6 +143,8 @@ runIde {
             "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
             "--add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED"
     ]
+    // 纵深防御：彻底禁用 fastjson2 AutoType（XVE-2026-42782）
+    systemProperty "fastjson2.parser.safeMode", "true"
     systemProperty "idea.ui.themes", "Darcula"
     systemProperty "file.encoding", "UTF-8"
     systemProperty "idea.encoding.charset", "UTF-8"
@@ -213,4 +219,6 @@ tasks.named("test") {
         showStandardStreams = false
         exceptionFormat = "full"
     }
+    // 纵深防御：彻底禁用 fastjson2 AutoType（XVE-2026-42782）
+    jvmArgs += ["-Dfastjson2.parser.safeMode=true"]
 }
