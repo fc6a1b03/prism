@@ -116,7 +116,9 @@ public class AnyParser {
     }
 
     private static boolean looksLikeBase64(final String input) {
-        return input.length() >= MIN_BASE64_LENGTH && BASE64_PATTERN.matcher(input).matches();
+        // 正斜杠开头多为路径（如 /api/data），排除非 Base64 场景
+        return input.length() >= MIN_BASE64_LENGTH && input.charAt(0) != '/'
+                && BASE64_PATTERN.matcher(input).matches();
     }
 
     private static boolean looksLikeUrlParams(final String input) {
