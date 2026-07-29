@@ -454,6 +454,12 @@ EDT 线程读取文档 + 150ms 防抖，大文件自动跳过，支持点击/拖
 3. **剪贴板操作**: 需用户显式触发
 4. **文件操作**: 处理前校验 JSON 格式
 5. **压缩包解压**: 对单文件压缩设置压缩率兜底防护，防止解压炸弹；大文件/条目大小限制在打开器与搜索索引中均有护栏
+6. **Fastjson2 AutoType 安全**: 2026-07-27 披露 fastjson2 ≤ 2.0.62 的 FNV-1a 哈希碰撞可绕过 AutoType 校验（XVE-2026-42782，CVSS 9.8）。
+   - **默认安全**: fastjson2 默认关闭 AutoType，本插件的所有 JSON 解析（`JSON.parse()` / `JSON.parseObject()` 不传 `SupportAutoType`）不受影响
+   - **纵深防御**: Gradle 的 `runIde` 和 `test` 任务均配置 JVM 参数 `-Dfastjson2.parser.safeMode=true`
+   - **已知限制**: 2.0.62 的 SafeMode 仅有 JVM 参数方式（无编程式 API），且无法阻止显式传入 `SupportAutoType`
+   - **待升级**: 关注 [fastjson2 修复版本](https://github.com/alibaba/fastjson2) 发布后，更新 `settings.gradle` 中的 `fastjson2` 版本号
+   - **测试覆盖**: `JsonSafeModeTest` 记录当前安全基线与已知缺陷，供升级后回归对比
 
 ## 相关文档
 
