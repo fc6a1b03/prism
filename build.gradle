@@ -73,6 +73,11 @@ intellijPlatform {
         version = project.version.toString()
         // sinceBuild 自 IGP 2.14 起默认取目标平台 major build（2026.2 → 262），无需显式声明
         changeNotes = """
+            <b>0.19.5</b>
+            <ul>
+                <li>状态栏 JSON 路径面包屑：光标在 JSON 文本中移动实时显示 JsonPath（穿透嵌套对象与数组索引），点击复制到剪贴板并弹通知。</li>
+                <li>JSON 语法错误内联标注：非法 JSON 红波浪线定位（基于 fastjson2 真实异常行列提取）。</li>
+            </ul>
             <b>0.19.2</b>
             <ul>
                 <li>修复 AnyParser 正斜杠路径被 Base64 正则误匹配（如 /api/data），增加首字符 '/' 排除。</li>

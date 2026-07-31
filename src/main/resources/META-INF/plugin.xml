@@ -109,5 +109,10 @@
         <additionalTextAttributes scheme="Darcula" file="colorSchemes/RainbowBracketPairDefault.xml"/>
         <!-- 彩虹括号配对高亮：颜色设置页 -->
         <colorSettingsPage implementation="com.acme.prism.core.rainbow.RainbowBracketPairColorSettingsPage"/>
+        <!-- 状态栏 JSON 路径面包屑 -->
+        <statusBarWidgetFactory implementation="com.acme.prism.ui.statusbar.JsonPathStatusBarWidgetFactory"
+                                id="Prism.JsonPath"/>
+        <!-- JSON 语法错误内联标注 -->
+        <annotator implementationClass="com.acme.prism.ui.error.JsonSyntaxErrorAnnotator"/>
     </extensions>
 </idea-plugin>
