@@ -73,6 +73,13 @@ intellijPlatform {
         version = project.version.toString()
         // sinceBuild 自 IGP 2.14 起默认取目标平台 major build（2026.2 → 262），无需显式声明
         changeNotes = """
+            <b>0.19.6</b>
+            <ul>
+                <li>JSON 编辑器折叠：多行 JSON 自动生成可折叠区间（对象/数组括号对，字符串内括号忽略）。</li>
+                <li>性能护栏：超过 1MB 的 JSON 跳过自动识别与树构建，避免大文件阻塞 UI。</li>
+                <li>编辑器视口记忆：滚动位置实时记录，页签切换与项目重开均还原；无记录时默认置顶。</li>
+                <li>树面板刷新修复：文档监听改为内容去重（替代失效的引用比较），历史回显主动加载。</li>
+            </ul>
             <b>0.19.5</b>
             <ul>
                 <li>状态栏 JSON 路径面包屑：光标在 JSON 文本中移动实时显示 JsonPath（穿透嵌套对象与数组索引），点击复制到剪贴板并弹通知。</li>

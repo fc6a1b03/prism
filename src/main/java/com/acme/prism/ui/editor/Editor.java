@@ -7,7 +7,6 @@ import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.EditorSettings;
-import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.ex.EditorSettingsExternalizable;
@@ -29,7 +28,7 @@ import java.util.Objects;
  * @author 拒绝者
  * @date 2025-01-26
  */
-public sealed interface Editor permits CustomizeEditorFactory {
+public interface Editor {
     /**
      * 创建编辑器<br/>
      * 单页签编辑器使用
@@ -51,7 +50,7 @@ public sealed interface Editor permits CustomizeEditorFactory {
         return new EditorTextField(document, project, languageType, Boolean.FALSE, Boolean.FALSE) {
             @Override
             protected @NotNull EditorEx createEditor() {
-                return configureEditor(project, super.createEditor(), languageType);
+                return Editor.configureEditor(project, super.createEditor(), languageType);
             }
         };
     }
@@ -95,13 +94,12 @@ public sealed interface Editor permits CustomizeEditorFactory {
      * @param project 项目
      * @param editor  编辑
      */
-    default EditorEx configureEditor(final Project project, final EditorEx editor, final LanguageFileType languageType) {
+    static EditorEx configureEditor(final Project project, final EditorEx editor, final LanguageFileType languageType) {
         // 基础编辑器配置
         editor.setCaretVisible(Boolean.TRUE);
         editor.setVerticalScrollbarVisible(Boolean.TRUE);
         editor.setHorizontalScrollbarVisible(Boolean.TRUE);
         editor.setBorder(BorderFactory.createEmptyBorder());
-        editor.getScrollingModel().scrollToCaret(ScrollType.CENTER);
         // 折叠功能配置
         editor.getFoldingModel().setFoldingEnabled(Boolean.TRUE);
         // 设置菜单和交互

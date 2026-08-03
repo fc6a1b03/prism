@@ -8,6 +8,7 @@ import com.acme.prism.core.parser.AnyParser;
 import com.acme.prism.core.parser.JwtParser;
 import com.acme.prism.core.parser.PathParser;
 import com.acme.prism.ui.dialog.ConvertAnyDialog;
+import com.acme.prism.ui.editor.JsonFoldingSupport;
 import com.alibaba.fastjson2.JSON;
 import com.intellij.diff.DiffContentFactory;
 import com.intellij.diff.DiffManager;
@@ -83,6 +84,11 @@ public class MainPanel {
      * JSON 文件扩展名
      */
     private static final String JSON_EXTENSION = "json";
+    /**
+     * 自动识别与树构建跳过的大 JSON 阈值（字符）。超过该长度的文本不做自动识别/树构建，
+     * 避免大文件粘贴或加载时阻塞 UI（对齐 minimap 2MB / 彩虹变量 2 万行的护栏策略）
+     */
+    private static final int MAX_AUTO_PROCESS_CHARS = 1024 * 1024;
     /**
      * 编辑器弹出菜单名称
      */
@@ -461,32 +467,43 @@ public class MainPanel {
                     "JsonHelper.AutoDetect", AUTO_DETECT_DEBOUNCE_MS, Boolean.TRUE, null, parentDisposable, null, Alarm.ThreadToUse.POOLED_THREAD
             );
             EditorFactory.getInstance().getEventMulticaster().addDocumentListener(new DocumentListener() {
+                /** 上次处理的文本，内容去重避免多页签/重复事件重复触发 */
+                private String lastProcessed = "";
+
                 @Override
                 public void documentChanged(final @NotNull DocumentEvent e) {
-                    if (e.getDocument() != editor.getDocument()) {
+                    // EditorTextField 内部存在两个 document 实例（内部 editor 与外部 PSI），
+                    // 引用比较在打字场景不可靠，改为按文本内容去重
+                    final String text = editor.getText();
+                    if (text.equals(this.lastProcessed)) {
                         return;
                     }
-                    // 获取新旧片段并预处理
+                    this.lastProcessed = text;
+                    // 获取新旧片段并预处理（用事件片段判断是否纯空白差异）
                     final CharSequence oldText = e.getOldFragment();
                     final CharSequence newText = e.getNewFragment();
-                    // 内容无变化时直接跳过
                     if (CharSequence.compare(oldText, newText) == 0) {
                         return;
                     }
-                    // 忽略纯空白差异
                     if (StrUtil.emptyIfNull(oldText).strip().equals(StrUtil.emptyIfNull(newText).strip())) {
                         return;
                     }
-                    // 文档内容
-                    final String text = StrUtil.emptyIfNull(e.getDocument().getText());
                     // 根据文档内容调整清空按钮的状态
                     clearButton.setEnabled(!StrUtil.isEmpty(text));
+                    // 性能护栏：超大 JSON 跳过自动识别，避免阻塞后台线程与 EDT
+                    if (text.length() > MAX_AUTO_PROCESS_CHARS) {
+                        return;
+                    }
                     if (MainPanel.this.autoDetectApplying.get()) {
                         return;
                     }
-                    // 防抖调度：自动识别路径类型（Web或本地路径）、Jwt、Any并将其转换为格式化JSON，回写到编辑器
+                    // 防抖调度：自动识别路径类型（Web或本地路径）、Jwt、Any并将其转换为格式化JSON，回写到编辑器；
+                    // 折叠更新并入同一队列（POOLED 线程执行 JSON 校验，避免大文本全量解析阻塞 EDT）
                     // identity 固定为编辑器实例，连续输入事件互相合并，仅执行最后一次
-                    MainPanel.this.autoDetectQueue.queue(Update.create(editor, () -> MainPanel.this.optPath(text, editor)));
+                    MainPanel.this.autoDetectQueue.queue(Update.create(editor, () -> {
+                        MainPanel.this.updateFolding(editor, text);
+                        MainPanel.this.optPath(text, editor);
+                    }));
                 }
             }, parentDisposable);
         }
@@ -547,6 +564,10 @@ public class MainPanel {
      * @param editor 目标编辑器组件, 用于回写处理结果
      */
     private void optPath(final String text, final EditorTextField editor) {
+        // 性能护栏：超大文本不做自动识别（与 documentChanged 双保险）
+        if (text.length() > MAX_AUTO_PROCESS_CHARS) {
+            return;
+        }
         final long sequence = this.autoDetectSequence.incrementAndGet();
         CompletableFuture.supplyAsync(() -> {
                     final String result = this.resolveJson(text);
@@ -580,6 +601,26 @@ public class MainPanel {
             return jwtResult;
         }
         return AnyParser.convert(text);
+    }
+
+    /**
+     * 更新编辑器 JSON 折叠区域：仅当文本为合法 JSON 且含换行时生效（压缩单行不折叠）。
+     * 由防抖队列在后台线程调用（JSON 校验不阻塞 EDT），折叠模型应用切回 EDT。
+     *
+     * @param editor 编辑器
+     * @param text   当前文本
+     */
+    private void updateFolding(final EditorTextField editor, final String text) {
+        if (text.indexOf('\n') < 0 || !JSON.isValid(text)) {
+            return;
+        }
+        // EditorTextField 的内部 Editor 可能尚未创建，延迟到 EDT 获取
+        ApplicationManager.getApplication().invokeLater(() -> {
+            if (Objects.isNull(editor.getEditor())) {
+                return;
+            }
+            JsonFoldingSupport.updateFolding(editor.getEditor(), editor.getText());
+        });
     }
 
     /**

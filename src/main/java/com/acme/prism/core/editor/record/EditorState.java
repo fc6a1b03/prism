@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author 拒绝者
  * @date 2025-11-04
  */
-public record EditorState(Integer editorId, String content) {
+public record EditorState(Integer editorId, String content, Integer scrollOffset, Integer caretOffset) {
     /**
      * Base64 编码器
      */
@@ -41,6 +41,27 @@ public record EditorState(Integer editorId, String content) {
     public static final Set<String> SAVED_MARK = ConcurrentHashMap.newKeySet();
 
     /**
+     * 兼容构造：无滚动与光标位置（旧数据或首次创建），恢复时默认置顶。
+     *
+     * @param editorId 编辑器 ID
+     * @param content  内容
+     */
+    public EditorState(final Integer editorId, final String content) {
+        this(editorId, content, null, null);
+    }
+
+    /**
+     * 兼容构造：带滚动位置（历史格式）。
+     *
+     * @param editorId     编辑器 ID
+     * @param content      内容
+     * @param scrollOffset 滚动位置
+     */
+    public EditorState(final Integer editorId, final String content, final Integer scrollOffset) {
+        this(editorId, content, scrollOffset, null);
+    }
+
+    /**
      * 编码
      * @param stateList 列表
      * @return {@link String }
@@ -56,10 +77,14 @@ public record EditorState(Integer editorId, String content) {
             if (!first) {
                 builder.append(SEP_OUTSIDE);
             }
-            // content 为 null 时按空串处理，避免编码器 NPE
+            // content 为 null 时按空串处理，避免编码器 NPE；scrollOffset/caretOffset 为 null 时写空段
             builder.append(state.editorId)
                     .append(SEP_INTERNAL)
-                    .append(BASE64_ENCODER.encodeToString(StrUtil.bytes(Objects.requireNonNullElse(state.content, ""), StandardCharsets.UTF_8)));
+                    .append(BASE64_ENCODER.encodeToString(StrUtil.bytes(Objects.requireNonNullElse(state.content, ""), StandardCharsets.UTF_8)))
+                    .append(SEP_INTERNAL)
+                    .append(Objects.isNull(state.scrollOffset) ? "" : state.scrollOffset)
+                    .append(SEP_INTERNAL)
+                    .append(Objects.isNull(state.caretOffset) ? "" : state.caretOffset);
             first = false;
         }
         return builder.toString();
@@ -78,12 +103,15 @@ public record EditorState(Integer editorId, String content) {
                 continue;
             }
             final String[] parts = entry.split(SEP_INTERNAL, -1);
-            if (ArrayUtil.isEmpty(parts) || parts.length != 2) {
+            // 兼容旧数据：历史版本仅 2 段（id, content），滚动/光标位置为 null
+            if (ArrayUtil.isEmpty(parts) || parts.length < 2) {
                 continue;
             }
             states.add(new EditorState(
                     Convert.toInt(parts[0]),
-                    StrUtil.utf8Str(BASE64_DECODER.decode(parts[1]))
+                    StrUtil.utf8Str(BASE64_DECODER.decode(parts[1])),
+                    parts.length >= 3 ? Convert.toInt(parts[2]) : null,
+                    parts.length >= 4 ? Convert.toInt(parts[3]) : null
             ));
         }
         return states;
