@@ -116,6 +116,63 @@ class EditorStateTest {
     }
 
     @Test
+    @DisplayName("正常：带滚动位置的记录编码解码往返一致")
+    void roundTripsWithScrollOffset() {
+        final EditorState state = new EditorState(5, "{\"a\":1}", 1234);
+        final List<EditorState> decoded = EditorState.decode(EditorState.encode(List.of(state)));
+        assertAll(
+                () -> assertEquals(1, decoded.size()),
+                () -> assertEquals(1234, decoded.getFirst().scrollOffset(), "滚动位置应无损往返")
+        );
+    }
+
+    @Test
+    @DisplayName("兼容：旧格式（无滚动位置段）解码后 scrollOffset 为 null")
+    void decodesLegacyTwoSegmentFormat() {
+        // 旧版本只存 id + content 两段，无第三段滚动位置
+        final String legacy = "1\u001FeyJhIjoxfQ==";
+        final List<EditorState> decoded = EditorState.decode(legacy);
+        assertAll(
+                () -> assertEquals(1, decoded.size()),
+                () -> assertEquals(1, decoded.getFirst().editorId()),
+                () -> assertEquals("{\"a\":1}", decoded.getFirst().content()),
+                () -> assertNull(decoded.getFirst().scrollOffset(), "旧数据滚动位置应为 null，恢复时默认置顶")
+        );
+    }
+
+    @Test
+    @DisplayName("兼容：三参 null 滚动位置与双参构造等价")
+    void nullScrollOffsetEquivalent() {
+        final EditorState withNull = new EditorState(1, "x", null);
+        final EditorState legacy = new EditorState(1, "x");
+        assertEquals(legacy, withNull, "null 滚动位置应与双参构造等价");
+        assertEquals(legacy, EditorState.decode(EditorState.encode(List.of(withNull))).getFirst(),
+                "null 滚动位置编码解码后应保持 null");
+    }
+
+    @Test
+    @DisplayName("正常：带光标位置的记录编码解码往返一致")
+    void roundTripsWithCaretOffset() {
+        final EditorState state = new EditorState(6, "{\"a\":1}", null, 42);
+        final List<EditorState> decoded = EditorState.decode(EditorState.encode(List.of(state)));
+        assertAll(
+                () -> assertEquals(1, decoded.size()),
+                () -> assertEquals(42, decoded.getFirst().caretOffset(), "光标位置应无损往返")
+        );
+    }
+
+    @Test
+    @DisplayName("兼容：旧格式（无光标段）解码后 caretOffset 为 null")
+    void decodesLegacyFormatCaretNull() {
+        // 旧版本只存 id + content 两段
+        final List<EditorState> decoded = EditorState.decode("1\u001FeyJhIjoxfQ==");
+        assertAll(
+                () -> assertEquals(1, decoded.size()),
+                () -> assertNull(decoded.getFirst().caretOffset(), "旧数据光标位置应为 null")
+        );
+    }
+
+    @Test
     @DisplayName("边界：decode 对非数字编辑器 ID 容错为 null")
     void decodeToleratesNonNumericEditorId() {
         final List<EditorState> decoded = EditorState.decode("abc\u001FaGVsbG8=");

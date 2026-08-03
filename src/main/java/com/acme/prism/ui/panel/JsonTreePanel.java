@@ -78,6 +78,10 @@ public class JsonTreePanel extends JPanel {
      */
     private static final int TREE_UPDATE_DEBOUNCE_MS = 300;
     /**
+     * 树构建跳过的大 JSON 阈值（字符），超过不做树构建，避免大文件阻塞（对齐 MainPanel 护栏）
+     */
+    private static final int MAX_TREE_CHARS = 1024 * 1024;
+    /**
      * JSON树
      */
     private final Tree jsonTree;
@@ -173,6 +177,10 @@ public class JsonTreePanel extends JPanel {
      * @param txt JSON文本
      */
     public void loadJson(final String txt) {
+        // 性能护栏：超大 JSON 跳过树构建，避免阻塞后台线程（对齐 minimap 2MB 护栏）
+        if (txt.length() > MAX_TREE_CHARS) {
+            return;
+        }
         final long sequence = this.treeSequence.incrementAndGet();
         CompletableFuture
                 .supplyAsync(() -> new DefaultTreeModel(this.buildTreeModel(JsonNodeParser.parse("root", txt))),
@@ -203,15 +211,27 @@ public class JsonTreePanel extends JPanel {
             // 随页签释放停止定时器与队列，防止泄漏
             Disposer.register(parentDisposable, () -> this.searchTimer.stop());
             EditorFactory.getInstance().getEventMulticaster().addDocumentListener(new DocumentListener() {
+                /** 上次处理的文本，内容去重避免多页签/重复事件重复构建树 */
+                private String lastProcessed = "";
+
                 @Override
                 public void documentChanged(final @NotNull DocumentEvent e) {
-                    if (e.getDocument() != editor.getDocument()) {
+                    // EditorTextField 内部存在两个 document 实例（内部 editor 与外部 PSI），
+                    // 引用比较在打字场景不可靠，改为按文本内容去重
+                    final String text = editor.getText();
+                    if (text.equals(this.lastProcessed)) {
                         return;
                     }
+                    this.lastProcessed = text;
                     // identity 固定为编辑器实例，连续变更互相合并，仅执行最后一次
-                    JsonTreePanel.this.treeUpdateQueue.queue(Update.create(editor, () -> JsonTreePanel.this.loadJson(editor.getText())));
+                    JsonTreePanel.this.treeUpdateQueue.queue(Update.create(editor, () -> JsonTreePanel.this.loadJson(text)));
                 }
             }, parentDisposable);
+            // 历史回显在面板创建前已 setText，监听器未注册收不到事件，此处主动加载一次
+            final String initial = editor.getText();
+            if (!initial.isEmpty()) {
+                this.treeUpdateQueue.queue(Update.create(editor, () -> this.loadJson(initial)));
+            }
         }
         // 创建树面板
         final JPanel panel = new JPanel(new BorderLayout(0, 0));

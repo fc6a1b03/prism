@@ -117,9 +117,20 @@ public class MainToolWindowFactory implements ToolWindowFactory, DumbAware {
                                             .flatMap(number ->
                                                     Opt.ofNullable(JsonEditorPushProvider.deepFindEditor(contents[number].getComponent()))
                                                             .filter(Objects::nonNull)
-                                                            .map(field ->
-                                                                    Stream.of(new EditorState(Convert.toInt(contents[number].getTabName()), field.getText()))
-                                                            ).orElseGet(Stream::empty)
+                                                            .map(field -> {
+                                                                // 优先读编辑器实时滚动偏移；编辑器已释放（IDE 关闭流程）则回退到 factory 记录值
+                                                                final Integer scroll = Opt.ofNullable(field.getEditor())
+                                                                        .map(editor -> editor.getScrollingModel().getVerticalScrollOffset())
+                                                                        .orElseGet(() -> {
+                                                                            final Object f = field.getClientProperty(CUSTOMIZE_FACTORY_KEY);
+                                                                            return f instanceof final CustomizeEditorFactory cf ? cf.getCurrentScrollOffset() : null;
+                                                                        });
+                                                                return Stream.of(new EditorState(
+                                                                        Convert.toInt(contents[number].getTabName()),
+                                                                        field.getText(),
+                                                                        scroll
+                                                                ));
+                                                            }).orElseGet(Stream::empty)
                                             ).toList()
                             )
                     );
@@ -164,8 +175,12 @@ public class MainToolWindowFactory implements ToolWindowFactory, DumbAware {
         Disposer.register(ProjectDisposableService.getInstance(project), tabDisposable);
         // 增加页签号数
         final int number = Opt.ofNullable(restore).map(EditorState::editorId).peek(tabCounter::set).orElseGet(tabCounter::incrementAndGet);
-        // 创建页签内容面板
-        final JPanel contentPanel = this.createWindowContent(project, number, Opt.ofNullable(restore).map(EditorState::content).orElse(null), tabDisposable);
+        // 创建页签内容面板（携带保存的视口滚动偏移；无保存值时默认置顶）
+        final JPanel contentPanel = this.createWindowContent(
+                project, number,
+                Opt.ofNullable(restore).map(EditorState::content).orElse(null),
+                Opt.ofNullable(restore).map(EditorState::scrollOffset).orElse(null),
+                tabDisposable);
         // 创建页签内容
         final Content content = ContentFactory.getInstance().createContent(contentPanel, String.valueOf(number), Boolean.FALSE);
         // 可关闭设置
@@ -217,18 +232,28 @@ public class MainToolWindowFactory implements ToolWindowFactory, DumbAware {
     }
 
     /**
+     * 页签编辑器与其 CustomizeEditorFactory 的关联键（EditorTextField client property）
+     */
+    private static final String CUSTOMIZE_FACTORY_KEY = "prism.json.factory";
+
+    /**
      * 创建窗口内容
      *
-     * @param project 项目
-     * @param number  页签号数
-     * @param content 内容
+     * @param project      项目
+     * @param number       页签号数
+     * @param content      内容
+     * @param scrollOffset 保存的视口滚动偏移（项目重开还原），null 表示置顶
      * @return {@link JPanel }
      */
-    private JPanel createWindowContent(@NotNull final Project project, final int number, final String content, final Disposable tabDisposable) {
+    private JPanel createWindowContent(@NotNull final Project project, final int number, final String content,
+                                       final Integer scrollOffset, final Disposable tabDisposable) {
         // 窗口工具
         final JPanel toolWindow = new JPanel(new BorderLayout(0, 0));
-        // 创建JSON编辑器
-        final EditorTextField editor = new CustomizeEditorFactory(SupportedLanguages.JSON, "Dummy_%d.json".formatted(number)).create(project);
+        // 创建JSON编辑器（初始视口偏移：有保存值则还原，无则置顶；页签切换由 VisibleAreaListener 实时记录）
+        final CustomizeEditorFactory factory = new CustomizeEditorFactory(SupportedLanguages.JSON, "Dummy_%d.json".formatted(number), scrollOffset);
+        final EditorTextField editor = factory.create(project);
+        // 关联 factory：IDE 关闭保存时若 editor 已释放，从 factory 读取实时滚动偏移兜底
+        editor.putClientProperty(CUSTOMIZE_FACTORY_KEY, factory);
         // 填充内容
         Opt.ofBlankAble(content).ifPresent(editor::setText);
         // 等待编辑器初始化后，挂载面板功能
