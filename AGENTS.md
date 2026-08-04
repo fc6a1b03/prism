@@ -50,7 +50,7 @@
 | IntelliJ Platform       | 2026.2 | IDE 集成                 |
 | Hutool                  | 5.8.47 | 工具库（core + http）    |
 | Jackson                 | 3.2.1  | JSON/数据格式处理（BOM） |
-| Fastjson2               | 2.0.62 | JSON 解析与校验          |
+| Fastjson2               | 2.0.64 | JSON 解析与校验          |
 | Auth0 JWT               | 4.5.2  | JWT Token 解析           |
 | Apache POI              | 5.5.1  | Excel 文件支持           |
 | Apache Commons Compress | 1.28.0 | 压缩包格式支持           |
@@ -454,12 +454,12 @@ EDT 线程读取文档 + 150ms 防抖，大文件自动跳过，支持点击/拖
 3. **剪贴板操作**: 需用户显式触发
 4. **文件操作**: 处理前校验 JSON 格式
 5. **压缩包解压**: 对单文件压缩设置压缩率兜底防护，防止解压炸弹；大文件/条目大小限制在打开器与搜索索引中均有护栏
-6. **Fastjson2 AutoType 安全**: 2026-07-27 披露 fastjson2 ≤ 2.0.62 的 FNV-1a 哈希碰撞可绕过 AutoType 校验（XVE-2026-42782，CVSS 9.8）。
+6. **Fastjson2 AutoType 安全**: 2026-07-27 披露 fastjson2 ≤ 2.0.62 的 FNV-1a 哈希碰撞可绕过 AutoType 校验（XVE-2026-42782，CVSS 9.8），已在 **2.0.63** 修复（白名单 hash 命中后文本回验、URL 特殊字符类型名拒绝、accept 前缀不再覆盖 ClassLoader/DataSource/RowSet 危险基类）。
+   - **当前版本**: 已升级至 2.0.64（2.0.63 安全修复 + 2.0.64 JSONB OOM/DoS、Metaspace 泄漏、record 泛型等修复）
    - **默认安全**: fastjson2 默认关闭 AutoType，本插件的所有 JSON 解析（`JSON.parse()` / `JSON.parseObject()` 不传 `SupportAutoType`）不受影响
-   - **纵深防御**: Gradle 的 `runIde` 和 `test` 任务均配置 JVM 参数 `-Dfastjson2.parser.safeMode=true`
-   - **已知限制**: 2.0.62 的 SafeMode 仅有 JVM 参数方式（无编程式 API），且无法阻止显式传入 `SupportAutoType`
-   - **待升级**: 关注 [fastjson2 修复版本](https://github.com/alibaba/fastjson2) 发布后，更新 `settings.gradle` 中的 `fastjson2` 版本号
-   - **测试覆盖**: `JsonSafeModeTest` 记录当前安全基线与已知缺陷，供升级后回归对比
+   - **纵深防御**: Gradle 的 `runIde` 和 `test` 任务均配置 JVM 参数 `-Dfastjson2.parser.safeMode=true`；实测 2.0.62/2.0.64 下 SafeMode 开启时显式传入 `SupportAutoType` 同样不实例化 @type（结果恒为 `JSONObject`）
+   - **已知限制**: SafeMode 仅有 JVM 参数与编程式 `JSON.configSafeMode()` 两种方式，无法阻止在 AutoType 白名单场景下的合法放行；XVE-2026-42782 影响的是 AutoType 白名单场景，本插件从不开启 AutoType，攻击面极小
+   - **测试覆盖**: `JsonSafeModeTest` 守护安全基线（默认配置与 SafeMode 下 @type 均不实例化，含危险类名回归用例）；注意 `JSONObject extends LinkedHashMap`，断言必须用 `getClass() == JSONObject.class` 精确类型，`assertInstanceOf(HashMap.class)` 恒真无区分能力
 
 ## 相关文档
 
