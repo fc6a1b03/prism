@@ -17,7 +17,7 @@ pluginManagement {
 // 统一版本表：插件版本、目标平台、Java 基线与第三方依赖版本在此集中维护
 gradle.ext.versions = [
         // 插件版本：发布新版本时递增，并同步更新 build.gradle 中的 changeNotes
-        ver         : "0.19.6",
+        ver         : "0.19.7",
         // 目标 IntelliJ 平台版本：sinceBuild 自 IGP 2.14 起默认取平台 major build（2026.2 → 262），无需显式声明
         idea        : "2026.2",
         // Java 语言基线：toolchain 与 options.release 共用
@@ -27,7 +27,7 @@ gradle.ext.versions = [
         hutool      : "5.8.47",
         jackson     : "3.2.1",
         apachePoi   : "5.5.1",
-        fastjson2   : "2.0.62",
+        fastjson2   : "2.0.64",
         junit       : "6.1.2",
         commonsLang3: "3.20.0",
         commonsCompress: "1.28.0"

@@ -69,23 +69,31 @@ build/distributions/prism-x.x.x.zip
 ## 项目结构
 
 ```text
-src/main/java/com/acme/json/helper
+src/main/java/com/acme/prism
 ├── common
+│   └── enums
 ├── core
-│   ├── editor
-│   ├── json
-│   ├── notice
-│   ├── parser
+│   ├── archive      # 压缩包索引/树节点/搜索/打开器
+│   ├── console      # 控制台 JSON 推送
+│   ├── editor       # JSON 折叠、编辑器状态
+│   ├── fileinfo     # 项目树文件信息
+│   ├── json         # JSON 操作（格式化/压缩/转义/搜索）
+│   ├── minimap      # 代码地图
+│   ├── notice       # 通知系统
+│   ├── parser       # 解析与格式转换
 │   │   └── converter
-│   ├── screenshot
-│   ├── search
-│   └── settings
+│   ├── rainbow      # 彩虹括号/变量/颜色高亮
+│   ├── screenshot   # 代码截图
+│   ├── search       # 项目/HTTP/端口/压缩包搜索
+│   └── settings     # 插件设置
 └── ui
-    ├── action
-    ├── dialog
-    ├── editor
-    ├── panel
-    └── search
+    ├── action       # 动作（json/搜索/截图/console）
+    ├── dialog       # 转换/建类对话框
+    ├── editor       # 面板编辑器定制
+    ├── error        # JSON 语法错误标注
+    ├── panel        # 主面板/JSON 树面板
+    ├── search       # Search Everywhere 工厂
+    └── statusbar    # 状态栏 JSON 路径面包屑
 ```
 
 ## CI / Release

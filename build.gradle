@@ -73,6 +73,11 @@ intellijPlatform {
         version = project.version.toString()
         // sinceBuild 自 IGP 2.14 起默认取目标平台 major build（2026.2 → 262），无需显式声明
         changeNotes = """
+            <b>0.19.7</b>
+            <ul>
+                <li>安全升级：fastjson2 2.0.62 → 2.0.64，修复 XVE-2026-42782 AutoType 白名单 hash 碰撞绕过（2.0.63 官方修复：白名单文本回验、URL 特殊字符类型名拒绝、危险基类前缀防护），并附带 JSONB OOM/DoS、Metaspace 泄漏、record 泛型等修复。</li>
+                <li>安全测试修正：JsonSafeModeTest 重写有效断言（JSONObject extends LinkedHashMap，旧 assertInstanceOf(HashMap.class) 恒真无区分能力），实测 SafeMode 下显式 SupportAutoType 也不实例化 @type，新增危险类名回归用例。</li>
+            </ul>
             <b>0.19.6</b>
             <ul>
                 <li>JSON 编辑器折叠：多行 JSON 自动生成可折叠区间（对象/数组括号对，字符串内括号忽略）。</li>

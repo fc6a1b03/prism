@@ -11,13 +11,27 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * fastjson2 安全性验证测试。
  *
- * <p>验证 fastjson2 2.0.62 在默认配置下的安全行为，并记录当前 SafeMode JVM 参数
- *（{@code -Dfastjson2.parser.safeMode=true}）的实际效果差异，供升级后回归对比。
+ * <p>验证 fastjson2 在默认配置与 SafeMode（{@code -Dfastjson2.parser.safeMode=true}）
+ * 下的安全行为，守护插件的安全姿态并防止升级引入回归。
  *
- * <p>背景：2026-07-27 披露 fastjson2 ≤ 2.0.62 的 FNV-1a 哈希碰撞可绕过 AutoType 校验
- *（XVE-2026-42782，CVSS 9.8）。本插件仅做纯数据层面的 JSON 解析/格式化，不涉及
- * Polymorphic 类型反序列化，因此攻击面极小。通过 Gradle test/runIde 配置
- * {@code -Dfastjson2.parser.safeMode=true} 作为纵深防御，并等待官方修复版本。
+ * <p>安全基线（实测于 2.0.62 与 2.0.64，测试任务 JVM 参数开启 SafeMode）：
+ * <ul>
+ *   <li>默认配置（不传 SupportAutoType，即插件全部实际用法）：@type 仅作普通字段解析，从不实例化类。</li>
+ *   <li>SafeMode 开启时，显式传 {@link JSONReader.Feature#SupportAutoType} 同样不实例化 @type
+ *       ——结果恒为 {@link JSONObject}。</li>
+ * </ul>
+ *
+ * <p>漏洞背景：2026-07-27 披露 fastjson2 ≤ 2.0.62 的 FNV-1a 哈希碰撞可绕过 AutoType
+ * 白名单校验（XVE-2026-42782，CVSS 9.8），已在 2.0.63 修复（白名单 hash 命中后文本回验、
+ * URL 特殊字符类型名拒绝、accept 前缀不再覆盖 ClassLoader/DataSource/RowSet 危险基类）。
+ * 该漏洞影响的是 AutoType 白名单场景；本插件从不开启 AutoType，叠加 SafeMode 纵深防御，
+ * 攻击面极小。升级 2.0.64 除获得该修复外，还附带 JSONB OOM/DoS、Metaspace 泄漏、
+ * record 泛型等多项修复。
+ *
+ * <p>断言说明：fastjson2 的 {@link JSONObject} 继承自 {@link java.util.LinkedHashMap}，
+ * 因此 {@code assertInstanceOf(HashMap.class, result)} 恒真、无法区分 JSONObject 与
+ * 真正的 @type 实例（旧版测试即因此误报"SafeMode 可被绕过"）。本测试统一断言
+ * {@code result.getClass() == JSONObject.class} 精确类型以消除歧义。
  *
  * @author 拒绝者
  * @date 2026-07-29
@@ -35,25 +49,44 @@ class JsonSafeModeTest {
         assertEquals("java.util.HashMap", result.getString("@type"),
                 "默认配置下 @type 应被当作普通字符串字段");
         assertEquals("value", result.getString("key"));
-        assertInstanceOf(JSONObject.class, result, "默认配置下结果应为 JSONObject，非 @type 指定的类实例");
+        assertEquals(JSONObject.class, result.getClass(),
+                "默认配置下结果应为 JSONObject，非 @type 指定的类实例");
     }
 
     @Test
-    @DisplayName("已知缺陷（2.0.62）：显式 SupportAutoType 在 SafeMode 下仍可解析 @type —— 等待官方修复")
+    @DisplayName("安全：SafeMode 下显式 SupportAutoType 也不实例化 @type（2.0.63+ 官方修复后实测）")
     @SuppressWarnings("deprecation")
-    void explicitAutoTypeStillWorksUnderSafeMode_knownIssue() {
-        // 记录 fastjson2 2.0.62 的实际行为作为基线：
-        // 即使设置了 -Dfastjson2.parser.safeMode=true，显式传 SupportAutoType 仍会绕过。
-        // 升级到修复版本后，此测试需要改为断言 @type 被阻止。
+    void explicitSupportAutoTypeBlockedUnderSafeMode() {
+        // 实测（SafeMode JVM 参数开启）：2.0.62 与 2.0.64 下显式传 SupportAutoType，
+        // 无论 @type 指向内置安全类（HashMap）还是不存在的类/危险基类（ClassLoader 等），
+        // 结果恒为 JSONObject，不触发任何类实例化。
         final String jsonWithType = "{\"@type\":\"java.util.HashMap\",\"key\":\"value\"}";
         final Object result = JSON.parseObject(jsonWithType, Object.class, JSONReader.Feature.SupportAutoType);
 
         assertNotNull(result);
-        // 2.0.62 的行为：SafeMode JVM 参数不能阻止显式 SupportAutoType
-        // 修复版本发布后应改为 assertInstanceOf(JSONObject.class, result)
-        assertInstanceOf(java.util.HashMap.class, result,
-                "2.0.62 已知缺陷：SafeMode 无法阻止显式 SupportAutoType。"
-                        + "升级后此断言应改为 JSONObject.class");
+        assertEquals(JSONObject.class, result.getClass(),
+                "SafeMode 下显式 SupportAutoType 不得绕过：结果应为 JSONObject，而非 @type 类实例");
+        assertEquals("java.util.HashMap", ((JSONObject) result).getString("@type"),
+                "@type 应保留为普通字段");
+    }
+
+    @Test
+    @DisplayName("安全：SafeMode 下危险类名（不存在的类/危险基类）同样不实例化")
+    @SuppressWarnings("deprecation")
+    void dangerousTypeNamesNotInstantiatedUnderSafeMode() {
+        // 覆盖 XVE-2026-42782 关注面：非白名单/危险基类即使在显式 SupportAutoType 下
+        // 也只解析为 JSONObject，类加载路径不被触碰。
+        final String[] dangerousPayloads = {
+                "{\"@type\":\"com.example.NonExistentEvil\",\"a\":1}",
+                "{\"@type\":\"javax.sql.DataSource\",\"a\":1}",
+                "{\"@type\":\"java.lang.ClassLoader\",\"a\":1}",
+                "{\"@type\":\"java.net.URL\",\"a\":1}"
+        };
+        for (final String payload : dangerousPayloads) {
+            final Object result = JSON.parseObject(payload, Object.class, JSONReader.Feature.SupportAutoType);
+            assertEquals(JSONObject.class, result.getClass(),
+                    "危险类型名不得实例化: " + payload);
+        }
     }
 
     @Test
@@ -65,7 +98,7 @@ class JsonSafeModeTest {
         final Object parsed = JSON.parse(maliciousJson);
 
         assertNotNull(parsed);
-        assertInstanceOf(JSONObject.class, parsed);
+        assertEquals(JSONObject.class, parsed.getClass());
 
         // 序列化也正常
         final String output = JSON.toJSONString(parsed);
