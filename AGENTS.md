@@ -341,6 +341,10 @@ GitHub Actions 工作流 `.github/workflows/build_jar.yml`：
 
 发布新版本时：修改 `settings.gradle` 中 `gradle.ext.versions.ver`，并同步更新 `build.gradle` 中的 `changeNotes`。
 
+**提交信息规范**：Conventional Commits 中文标题 + 版本发布注明（如 `build: 升级 fastjson2 至 2.0.64，发布 0.19.7`），body 逐条列改动点。
+
+**GitHub mention 陷阱**：提交信息中禁止裸写 `@xxx`（如 `@type`）——GitHub 会识别为 @mention 并通知同名用户，且引号/反引号包裹**不豁免**。替代写法：全角 `＠type`、`at-type`，或直接中文描述（"type 字段"）。一旦推送/合并进共享历史即无法补救（禁止 force push 改写）。
+
 ## 插件配置（`META-INF/plugin.xml` 关键点）
 
 - **Actions**（均注册在编辑器右键/相关菜单组）：
