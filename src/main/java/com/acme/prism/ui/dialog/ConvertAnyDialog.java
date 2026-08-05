@@ -8,7 +8,6 @@ import com.acme.prism.common.enums.AnyFile;
 import com.acme.prism.common.enums.SupportedLanguages;
 import com.acme.prism.core.notice.Notifier;
 import com.acme.prism.core.parser.JsonParser;
-import com.acme.prism.ui.editor.CustomizeEditorFactory;
 import com.acme.prism.ui.editor.Editor;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.TypeReference;
@@ -312,8 +311,9 @@ public class ConvertAnyDialog extends DialogWrapper {
      * @return {@link EditorTextField }
      */
     private EditorTextField buildEditor(final AnyFile anyFile, final String converted) {
-        final EditorTextField field = new CustomizeEditorFactory(SupportedLanguages.getByAnyFile(anyFile), "Dummy.%s".formatted(anyFile.extension()))
-                .create(this.project);
+        // 统一复用编辑器创建入口
+        final EditorTextField field = Editor.createEditorField(
+                this.project, SupportedLanguages.getByAnyFile(anyFile), "Dummy.%s".formatted(anyFile.extension()));
         field.setText(converted);
         Editor.reformat(field);
         return field;

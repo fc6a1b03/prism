@@ -5,13 +5,14 @@
 
     <!-- 插件描述：patchPluginXml 不会覆盖（build.gradle 未设置 description） -->
     <description><![CDATA[
-        Prism is an IntelliJ IDEA plugin that pairs JSON tooling (edit, repair, query, convert,
-        Java class generation, JsonPath, multi-format export) with editor enhancements:
+        Prism is an IntelliJ IDEA plugin that pairs JSON tooling (edit, repair, analyze, validate against JSON Schema,
+        sort, flatten/unflatten, mock data generation, query, convert to XML/CSV/YAML/SQL, Java class generation,
+        JsonPath, multi-format export) with editor enhancements:
         code minimap with git and inspection stripes, rainbow highlights, project tree insights,
         archive browsing, code screenshots, and project/HTTP/port search.
         <div style="max-width: 600px; margin: 0 auto; padding: 10px;">
             <a href="https://github.com/fc6a1b03/prism" style="color: #2B65EC; text-decoration: none; font-weight: 500;">Github</a>
-            <p style="color: #666; line-height: 1.5; margin: 8px 0 12px;">Prism 集 JSON 工具与编辑器增强于一身：自由编辑/修复/查询/转换 JSON、Java 类互转、多格式导出；并提供代码地图（Git 与异味标记）、彩虹括号与变量高亮、颜色字面量、项目树文件注释与压缩包浏览、代码截图、项目/HTTP/端口搜索等能力</p>
+            <p style="color: #666; line-height: 1.5; margin: 8px 0 12px;">Prism 集 JSON 工具与编辑器增强于一身：自由编辑/修复/分析/Schema 校验/排序/压平/还原/Mock 数据生成/查询/转换 JSON、Java 类互转、多格式导出；并提供代码地图（Git 与异味标记）、彩虹括号与变量高亮、颜色字面量、项目树文件注释与压缩包浏览、代码截图、项目/HTTP/端口搜索等能力</p>
         </div>
     ]]></description>
 

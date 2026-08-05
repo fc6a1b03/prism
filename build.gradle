@@ -73,6 +73,13 @@ intellijPlatform {
         version = project.version.toString()
         // sinceBuild 自 IGP 2.14 起默认取目标平台 major build（2026.2 → 262），无需显式声明
         changeNotes = """
+            <b>0.20.5</b>
+            <ul>
+                <li>JSON Schema 校验：新增 JsonSchemaValidator（type/required/enum/范围/items/pattern 逐字段校验）与校验弹窗（目标 JSON 自动带入、Schema 自动识别或一键生成、失败项表格展示），工具条新增校验按钮。</li>
+                <li>创建类弹窗升级：JSON 输入改为语法高亮编辑器，布局重构（类型/类名一行 + 编辑区占主体）。</li>
+                <li>编辑器创建统一收敛至 Editor.createEditorField（转换/校验/建类对话框复用单一入口）。</li>
+                <li>插件描述补充 analyze/schema/mock/SQL 关键词；校验结果区修复（高度与中文空状态）。</li>
+            </ul>
             <b>0.20.0</b>
             <ul>
                 <li>右侧面板深度工具：修复（损坏 JSON 自动修复，置信度评分+修复日志+低置信度警告）、按键排序、压平/还原、JSON Schema（Draft 7）生成、Mock 数据生成、结构分析（统计+重复键检测）。</li>
