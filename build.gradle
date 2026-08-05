@@ -73,6 +73,15 @@ intellijPlatform {
         version = project.version.toString()
         // sinceBuild 自 IGP 2.14 起默认取目标平台 major build（2026.2 → 262），无需显式声明
         changeNotes = """
+            <b>0.20.0</b>
+            <ul>
+                <li>右侧面板深度工具：修复（损坏 JSON 自动修复，置信度评分+修复日志+低置信度警告）、按键排序、压平/还原、JSON Schema（Draft 7）生成、Mock 数据生成、结构分析（统计+重复键检测）。</li>
+                <li>树面板增强：统计摘要栏（键/对象/数组/深度/大小）、展开全部/折叠全部、选中节点路径与值详情、值类型四色着色、长值截断。</li>
+                <li>JSON→SQL：新转换器生成 MySQL CREATE TABLE 与 INSERT，接入转换对话框。</li>
+                <li>编辑器 null 关键字独立灰色着色（仅工具窗口内编辑器），与 true/false 关键字色区分。</li>
+                <li>搜索框 JSONPath 历史 ↑/↓ 浏览。</li>
+                <li>性能：树构建与统计共用一次解析（消除双解析）；修复压缩丢弃 null 字段、JSONP 转义引号剥离。</li>
+            </ul>
             <b>0.19.7</b>
             <ul>
                 <li>安全升级：fastjson2 2.0.62 → 2.0.64，修复 XVE-2026-42782 AutoType 白名单 hash 碰撞绕过（2.0.63 官方修复：白名单文本回验、URL 特殊字符类型名拒绝、危险基类前缀防护），并附带 JSONB OOM/DoS、Metaspace 泄漏、record 泛型等修复。</li>

@@ -8,7 +8,9 @@ import com.alibaba.fastjson2.JSON;
  * @author 拒绝者
  * @date 2025-01-18
  */
-public sealed interface JsonOperation permits JsonCompressor, JsonEscaper, JsonFormatter, JsonSearchEngine, JsonUnEscaper {
+public sealed interface JsonOperation permits
+        JsonCompressor, JsonEscaper, JsonFlattener, JsonFormatter, JsonMockGenerator,
+        JsonRepairer, JsonSchemaGenerator, JsonSearchEngine, JsonSorter, JsonUnEscaper, JsonUnflattener {
     /**
      * JSON操作
      * @param input 输入

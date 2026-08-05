@@ -21,6 +21,9 @@
 **核心功能：**
 
 - JSON 编辑、格式化、压缩、转义与反转义
+- 自动修复损坏 JSON（单引号/缺逗号/尾逗号/注释/JSONP 包装/裸键/非标准字面量），带置信度与修复日志
+- 按键递归排序、扁平化/还原（点号键与嵌套结构互转）、JSON Schema（Draft 7）生成
+- 右侧面板深度工具：工具条（修复/排序/展开/还原/Schema/分析）、结构分析（键/对象/数组/深度/大小、重复键检测）、树形面板展开全部/折叠全部与选中节点路径/值详情
 - 从 JSON 生成 Java Class / Record
 - 从 Java 类字段复制 JSON 结构
 - JsonPath / JMESPath 查询与树形浏览
@@ -102,11 +105,17 @@ src/main/
 │   │   │   └── FileInfoDisplay.java         # 文件信息展示
 │   │   ├── json/                  # JSON 处理
 │   │   │   ├── JsonOperation.java       # JSON 操作接口 (sealed interface)
+│   │   │   ├── JsonAnalyzer.java        # JSON 结构分析（统计/重复键检测）
 │   │   │   ├── JsonCompressor.java      # JSON 压缩
 │   │   │   ├── JsonEscaper.java         # JSON 转义
-│   │   │   ├── JsonUnEscaper.java       # JSON 反转义
+│   │   │   ├── JsonFlattener.java       # JSON 扁平化（点号键展开）
 │   │   │   ├── JsonFormatter.java       # JSON 格式化
-│   │   │   └── JsonSearchEngine.java    # JSON 搜索引擎 (JsonPath/JMESPath)
+│   │   │   ├── JsonRepairer.java        # JSON 修复（损坏 JSON 自动修复，带置信度）
+│   │   │   ├── JsonSchemaGenerator.java # JSON Schema (Draft 7) 生成
+│   │   │   ├── JsonSearchEngine.java    # JSON 搜索引擎 (JsonPath/JMESPath)
+│   │   │   ├── JsonSorter.java          # JSON 键递归排序
+│   │   │   ├── JsonUnEscaper.java       # JSON 反转义
+│   │   │   └── JsonUnflattener.java     # JSON 反扁平化（点号键还原嵌套）
 │   │   ├── minimap/               # 代码地图（编辑器缩略图）
 │   │   │   ├── MinimapEditorFactoryListener.java  # 编辑器挂载监听器
 │   │   │   ├── MinimapPanel.java / MinimapView.java / MinimapRenderer.java
@@ -248,8 +257,8 @@ build/distributions/prism-x.x.x.zip
 1. **Sealed Interfaces**：核心抽象用 Java sealed interface 约束实现集
    ```java
    public sealed interface JsonOperation permits
-       JsonCompressor, JsonEscaper, JsonFormatter,
-       JsonSearchEngine, JsonUnEscaper { }
+       JsonCompressor, JsonEscaper, JsonFlattener, JsonFormatter, JsonRepairer,
+       JsonSchemaGenerator, JsonSearchEngine, JsonSorter, JsonUnEscaper, JsonUnflattener { }
    ```
    新增实现类时必须同步修改 `permits` 子句。
 
@@ -420,8 +429,14 @@ EDT 线程读取文档 + 150ms 防抖，大文件自动跳过，支持点击/拖
 
 1. 在 `core/json/` 创建类实现 `JsonOperation`
 2. 在 `JsonOperation.java` 的 `permits` 子句中登记
-3. 在 `MainPanel.java` 或相应面板/动作类中接入 UI
+3. 在 `MainPanel.java` 的 `createToolPanel()` 工具条或右键菜单中接入 UI（纯逻辑操作走 `optJson` 通用链路；需要元数据反馈的走自定义 action，如 `repairJson` / `unflattenJson`）
 4. 两个 properties 文件同步添加 i18n 键
+
+### 添加新的 JSON 分析能力
+
+1. 纯逻辑统计放 `core/json/JsonAnalyzer.java`（如 `Stats` / `duplicateKeys`），JUnit 单测覆盖
+2. 弹窗展示放 `ui/dialog/JsonAnalyzeDialog.java`（参考 `ConvertAnyDialog` 的 DialogWrapper 模式）
+3. 树面板统计摘要/按钮在 `ui/panel/JsonTreePanel.java` 的 `createStatsBar()` / `createTreeActions()` 接入
 
 ### 添加新的格式转换器
 
