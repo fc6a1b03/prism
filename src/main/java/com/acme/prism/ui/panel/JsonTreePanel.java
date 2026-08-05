@@ -5,7 +5,10 @@ import cn.hutool.core.convert.Convert;
 import cn.hutool.core.lang.Opt;
 import cn.hutool.core.util.StrUtil;
 import com.acme.prism.common.Clipboard;
+import com.acme.prism.core.json.JsonAnalyzer;
+import com.acme.prism.core.json.JsonAnalyzer.Stats;
 import com.acme.prism.core.parser.JsonNodeParser;
+import com.acme.prism.core.parser.JsonNodeParser.JsonNode;
 import com.alibaba.fastjson2.JSON;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.Disposable;
@@ -37,6 +40,7 @@ import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -82,9 +86,25 @@ public class JsonTreePanel extends JPanel {
      */
     private static final int MAX_TREE_CHARS = 1024 * 1024;
     /**
+     * 树面板最小高度（像素），保证树主体区域可见，不被分割窗格压缩
+     */
+    private static final int TREE_MIN_HEIGHT = 160;
+    /**
+     * 树节点值展示长度上限（字符），超过截断显示
+     */
+    private static final int MAX_VALUE_CHARS = 60;
+    /**
      * JSON树
      */
     private final Tree jsonTree;
+    /**
+     * 统计摘要标签
+     */
+    private JLabel statsLabel;
+    /**
+     * 选中节点路径与值详情标签
+     */
+    private JLabel footerLabel;
     /**
      * 匹配集合
      */
@@ -125,6 +145,8 @@ public class JsonTreePanel extends JPanel {
     public JsonTreePanel() {
         super(new BorderLayout());
         this.jsonTree = new Tree();
+        // 保证树主体区域最小可见高度，避免被分割窗格压缩成一条
+        this.setMinimumSize(new Dimension(0, TREE_MIN_HEIGHT));
         // 配置`JsonTree`树外观
         this.configureTreeAppearance();
     }
@@ -177,13 +199,27 @@ public class JsonTreePanel extends JPanel {
      * @param txt JSON文本
      */
     public void loadJson(final String txt) {
+        // 一次解析同时供树构建与统计复用（JsonAnalyzer.analyze(JsonNode) 消除二次解析）
+        final JsonNode root = JsonNodeParser.parse("root", txt);
+        final Stats stats = JsonAnalyzer.analyze(root, txt.getBytes(StandardCharsets.UTF_8).length);
+        ApplicationManager.getApplication().invokeLater(() -> {
+            if (Objects.isNull(this.statsLabel)) {
+                return;
+            }
+            if (stats.isEmpty()) {
+                this.statsLabel.setText(BUNDLE.getString("json.tree.stats.empty"));
+            } else {
+                this.statsLabel.setText(BUNDLE.getString("json.tree.stats")
+                        .formatted(stats.keys(), stats.objects(), stats.arrays(), stats.maxDepth(), formatSize(stats.sizeBytes())));
+            }
+        });
         // 性能护栏：超大 JSON 跳过树构建，避免阻塞后台线程（对齐 minimap 2MB 护栏）
         if (txt.length() > MAX_TREE_CHARS) {
             return;
         }
         final long sequence = this.treeSequence.incrementAndGet();
         CompletableFuture
-                .supplyAsync(() -> new DefaultTreeModel(this.buildTreeModel(JsonNodeParser.parse("root", txt))),
+                .supplyAsync(() -> new DefaultTreeModel(this.buildTreeModel(root)),
                         AppExecutorUtil.getAppExecutorService())
                 .thenAccept(model -> ApplicationManager.getApplication().invokeLater(() -> {
                     if (sequence != this.treeSequence.get()) {
@@ -243,10 +279,149 @@ public class JsonTreePanel extends JPanel {
         );
         pane.setBorder(BorderFactory.createEmptyBorder());
         panel.add(pane, BorderLayout.CENTER);
-        // 添加搜索框内容
-        panel.add(this.createSearchField(), BorderLayout.NORTH);
+        // 顶部：搜索框 + 展开/折叠按钮 + 信息栏（统计 + 选中节点详情）
+        final JPanel header = new JPanel(new BorderLayout(0, 0));
+        header.setBorder(BorderFactory.createEmptyBorder());
+        final JPanel searchRow = new JPanel(new BorderLayout(0, 0));
+        searchRow.setBorder(BorderFactory.createEmptyBorder());
+        searchRow.add(this.createSearchField(), BorderLayout.CENTER);
+        searchRow.add(this.createTreeActions(), BorderLayout.EAST);
+        header.add(searchRow, BorderLayout.NORTH);
+        header.add(this.createInfoBar(), BorderLayout.SOUTH);
+        panel.add(header, BorderLayout.NORTH);
         panel.setBorder(BorderFactory.createEmptyBorder());
         return panel;
+    }
+
+    /**
+     * 创建树操作按钮组（展开全部/折叠全部）。
+     *
+     * @return 按钮组面板
+     */
+    private JComponent createTreeActions() {
+        final JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+        panel.setBorder(BorderFactory.createEmptyBorder());
+        final JButton expandButton = new JButton();
+        expandButton.setIcon(AllIcons.Actions.Expandall);
+        expandButton.setToolTipText(BUNDLE.getString("json.tree.expand.all"));
+        expandButton.setMargin(JBUI.emptyInsets());
+        expandButton.setPreferredSize(new Dimension(SEARCH_FIELD_HEIGHT, SEARCH_FIELD_HEIGHT));
+        expandButton.addActionListener(_ -> this.expandAll());
+        final JButton collapseButton = new JButton();
+        collapseButton.setIcon(AllIcons.Actions.Collapseall);
+        collapseButton.setToolTipText(BUNDLE.getString("json.tree.collapse.all"));
+        collapseButton.setMargin(JBUI.emptyInsets());
+        collapseButton.setPreferredSize(new Dimension(SEARCH_FIELD_HEIGHT, SEARCH_FIELD_HEIGHT));
+        collapseButton.addActionListener(_ -> this.collapseAll());
+        panel.add(expandButton);
+        panel.add(collapseButton);
+        return panel;
+    }
+
+    /**
+     * 创建信息栏：左侧统计摘要 + 右侧选中节点路径与值详情（合并为一行，避免挤压树区域）。
+     *
+     * @return 信息栏面板
+     */
+    private JComponent createInfoBar() {
+        this.statsLabel = new JLabel();
+        this.statsLabel.setBorder(BorderFactory.createEmptyBorder(2, 8, 2, 4));
+        this.statsLabel.setFont(UIUtil.getLabelFont().deriveFont(Font.PLAIN));
+        this.statsLabel.setForeground(JBColor.GRAY);
+        this.footerLabel = new JLabel(" ");
+        this.footerLabel.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 8));
+        this.footerLabel.setFont(UIUtil.getLabelFont().deriveFont(Font.PLAIN));
+        this.footerLabel.setForeground(JBColor.GRAY);
+        this.jsonTree.addTreeSelectionListener(event -> {
+            final TreePath path = event.getPath();
+            if (Objects.isNull(path)) {
+                this.footerLabel.setText(" ");
+                return;
+            }
+            final String jsonPath = this.buildJsonPath(path);
+            final String value = truncate(this.getNodeText(path.getLastPathComponent(), NodeTextType.OBJECT), MAX_VALUE_CHARS);
+            // 根节点路径为空时回退为 $
+            this.footerLabel.setText("%s = %s".formatted(jsonPath.isEmpty() ? "$" : jsonPath, value));
+        });
+        final JPanel panel = new JPanel(new BorderLayout(0, 0));
+        panel.add(this.statsLabel, BorderLayout.WEST);
+        panel.add(this.footerLabel, BorderLayout.CENTER);
+        return panel;
+    }
+
+    /**
+     * 展开全部节点（基于模型递归，不依赖行号动态变化）。
+     */
+    private void expandAll() {
+        final TreeModel model = this.jsonTree.getModel();
+        if (Objects.isNull(model) || Objects.isNull(model.getRoot())) {
+            return;
+        }
+        this.expandPath(model, new TreePath(model.getRoot()));
+    }
+
+    /**
+     * 折叠全部节点。
+     *
+     * <p>不折叠隐藏的根节点（根被折叠会导致整棵树收起、显示 Nothing to show），
+     * 从根的子节点开始递归折叠。</p>
+     */
+    private void collapseAll() {
+        final TreeModel model = this.jsonTree.getModel();
+        if (Objects.isNull(model) || Objects.isNull(model.getRoot())) {
+            return;
+        }
+        this.collapseChildren(model, new TreePath(model.getRoot()));
+    }
+
+    /**
+     * 递归折叠子路径（不含根节点本身）。
+     *
+     * @param model 树模型
+     * @param path  当前路径
+     */
+    private void collapseChildren(final TreeModel model, final TreePath path) {
+        final Object node = path.getLastPathComponent();
+        for (int i = 0; i < model.getChildCount(node); i++) {
+            final TreePath child = path.pathByAddingChild(model.getChild(node, i));
+            this.collapseChildren(model, child);
+            this.jsonTree.collapsePath(child);
+        }
+    }
+
+    /**
+     * 递归展开路径及其所有子路径。
+     *
+     * @param model 树模型
+     * @param path  当前路径
+     */
+    private void expandPath(final TreeModel model, final TreePath path) {
+        this.jsonTree.expandPath(path);
+        final Object node = path.getLastPathComponent();
+        for (int i = 0; i < model.getChildCount(node); i++) {
+            this.expandPath(model, path.pathByAddingChild(model.getChild(node, i)));
+        }
+    }
+
+    /**
+     * 格式化字节大小。
+     *
+     * @param bytes 字节数
+     * @return 人类可读大小
+     */
+    private static String formatSize(final long bytes) {
+        return bytes >= 1024 ? "%.1f KB".formatted(bytes / 1024.0d) : "%d B".formatted(bytes);
+    }
+
+    /**
+     * 截断文本超长部分。
+     *
+     * @param text 文本
+     * @param max  上限
+     * @return 截断后的文本
+     */
+    private static String truncate(final String text, final int max) {
+        return StrUtil.isBlank(text) || text.length() <= max ? text : text.substring(0, max) + "…";
     }
 
     /**
@@ -313,11 +488,34 @@ public class JsonTreePanel extends JPanel {
                                 new SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, JBColor.BLUE) :
                                 new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, JBColor.GRAY)
                 );
-                this.renderer.append(String.valueOf(data.value()),
+                // 值（长值截断显示，完整内容在底部详情栏查看）；按值类型着色，一眼识别结构。
+                // null 的 value() 为空串，需显式渲染灰色 "null" 文本，避免节点值空白难辨
+                final String valueText = Objects.isNull(data.rawValue())
+                        ? "null"
+                        : truncate(String.valueOf(data.value()), MAX_VALUE_CHARS);
+                this.renderer.append(valueText,
                         isMatched ?
                                 new SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, JBColor.BLUE) :
-                                new SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, UIUtil.getTreeForeground())
+                                typeColor(data.type())
                 );
+            }
+
+            /**
+             * 按值类型返回展示颜色（对齐 IntelliJ 语法着色习惯）。
+             *
+             * @param type 节点类型
+             * @return 文本属性
+             */
+            private SimpleTextAttributes typeColor(final String type) {
+                return switch (type) {
+                    case "String" -> new SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, new JBColor(0x6A8759, 0x6A8759));
+                    case "Integer", "Long", "Double", "Float", "BigDecimal", "Short", "Byte" ->
+                            new SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, new JBColor(0x6897BB, 0x6897BB));
+                    case "Boolean" -> new SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, new JBColor(0xCC7832, 0xCC7832));
+                    case "Object", "Array" -> new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, UIUtil.getTreeForeground());
+                    // null 及未知类型：固定中性灰，避免主题自适应色（如 Darcula 暖灰）与布尔橙棕混淆
+                    default -> new SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, new JBColor(0x808080, 0x808080));
+                };
             }
         });
     }

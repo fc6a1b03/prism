@@ -88,7 +88,7 @@ public class JsonNodeParser {
         }
 
         /**
-         * 值
+         * 值（JSON 字符串形式，供树渲染展示）
          *
          * @return {@link String }
          */
@@ -96,6 +96,15 @@ public class JsonNodeParser {
             return Opt.ofNullable(this.value)
                     .map(JSON::toJSONString)
                     .orElse("");
+        }
+
+        /**
+         * 原始值（未序列化，供结构分析复用，避免二次解析）
+         *
+         * @return 原始对象值；可能为 {@code null}
+         */
+        public Object rawValue() {
+            return this.value;
         }
 
         /**

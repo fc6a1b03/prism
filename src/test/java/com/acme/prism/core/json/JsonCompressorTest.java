@@ -64,6 +64,13 @@ class JsonCompressorTest {
     }
 
     @Test
+    @DisplayName("正常：null 字段在压缩后保留（WriteMapNullValue）")
+    void preservesNullFields() {
+        final String result = compressor.process("{\"a\":null,\"b\":1}");
+        assertEquals("{\"a\":null,\"b\":1}", result, "压缩不应丢弃 null 字段");
+    }
+
+    @Test
     @DisplayName("异常：非法输入原样返回")
     void returnsInputOnInvalidJson() {
         final String garbage = "not a json";

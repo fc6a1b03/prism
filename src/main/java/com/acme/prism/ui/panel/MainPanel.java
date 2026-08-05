@@ -8,6 +8,7 @@ import com.acme.prism.core.parser.AnyParser;
 import com.acme.prism.core.parser.JwtParser;
 import com.acme.prism.core.parser.PathParser;
 import com.acme.prism.ui.dialog.ConvertAnyDialog;
+import com.acme.prism.ui.dialog.JsonAnalyzeDialog;
 import com.acme.prism.ui.editor.JsonFoldingSupport;
 import com.alibaba.fastjson2.JSON;
 import com.intellij.diff.DiffContentFactory;
@@ -41,13 +42,16 @@ import java.awt.*;
 import java.awt.event.*;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
+import java.util.List;
 import java.util.Objects;
 import java.util.ResourceBundle;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 /**
  * 主面板
@@ -65,6 +69,10 @@ public class MainPanel {
      */
     private static final int SEARCH_BOX_WIDTH = 220;
     /**
+     * 低置信度阈值：修复置信度低于该值时以警告样式提示人工核对
+     */
+    private static final double LOW_CONFIDENCE_THRESHOLD = 0.5d;
+    /**
      * 搜索框高度
      */
     private static final int SEARCH_BOX_HEIGHT = 35;
@@ -76,6 +84,10 @@ public class MainPanel {
      * 撤销/重做历史上限（防止长期编辑导致历史无限膨胀）
      */
     private static final int MAX_HISTORY_SIZE = 100;
+    /**
+     * 搜索历史上限
+     */
+    private static final int MAX_SEARCH_HISTORY = 10;
     /**
      * 自动识别防抖延迟（毫秒）
      */
@@ -105,6 +117,14 @@ public class MainPanel {
      * 撤销历史堆栈
      */
     private final Deque<String> undoStack = new ArrayDeque<>();
+    /**
+     * JSONPath 搜索历史（最新在前），支持搜索框 ↑/↓ 浏览
+     */
+    private final List<String> searchHistory = new ArrayList<>(MAX_SEARCH_HISTORY);
+    /**
+     * 搜索历史浏览索引
+     */
+    private int searchHistoryIndex = -1;
     /**
      * 原始记录`用于JSON搜索`
      */
@@ -150,7 +170,155 @@ public class MainPanel {
         this.editorAction(searchBox, redoButton, undoButton, editor);
         // 编辑器监听
         this.listener(editor, undoButton, redoButton, clearButton, parentDisposable);
-        return searchPanel;
+        // 深度工具条（修复/排序/展开/还原/Schema/分析）
+        final JPanel toolPanel = this.createToolPanel(redoButton, undoButton, editor);
+        final JPanel container = new JPanel(new BorderLayout(0, 0));
+        container.setBorder(BorderFactory.createEmptyBorder());
+        container.add(searchPanel, BorderLayout.NORTH);
+        container.add(toolPanel, BorderLayout.CENTER);
+        return container;
+    }
+
+    /**
+     * 创建深度工具条：修复 / 排序 / 展开 / 还原 / Schema / 分析。
+     *
+     * @param redoButton 重做按钮
+     * @param undoButton 撤消按钮
+     * @param editor     当前编辑
+     * @return 工具条面板
+     */
+    private JPanel createToolPanel(final JButton redoButton, final JButton undoButton, final EditorTextField editor) {
+        final JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 2));
+        panel.setBorder(BorderFactory.createEmptyBorder());
+        panel.add(this.createToolButton(BUNDLE.getString("json.repair.json"), AllIcons.Actions.IntentionBulb,
+                _ -> this.repairJson(redoButton, undoButton, editor)));
+        panel.add(this.createToolButton(BUNDLE.getString("json.sort.keys"), AllIcons.ObjectBrowser.SortByType,
+                _ -> this.optJson(redoButton, undoButton, editor.getEditor(), new JsonSorter())));
+        panel.add(this.createToolButton(BUNDLE.getString("json.flatten.json"), AllIcons.Actions.Collapseall,
+                _ -> this.optJson(redoButton, undoButton, editor.getEditor(), new JsonFlattener())));
+        panel.add(this.createToolButton(BUNDLE.getString("json.unflatten.json"), AllIcons.Actions.Expandall,
+                _ -> this.unflattenJson(redoButton, undoButton, editor)));
+        panel.add(this.createToolButton(BUNDLE.getString("json.schema.generate"), AllIcons.FileTypes.JsonSchema,
+                _ -> this.optJson(redoButton, undoButton, editor.getEditor(), new JsonSchemaGenerator())));
+        panel.add(this.createToolButton(BUNDLE.getString("json.mock.generate"), AllIcons.Actions.Rerun,
+                _ -> this.optJson(redoButton, undoButton, editor.getEditor(), new JsonMockGenerator())));
+        panel.add(this.createToolButton(BUNDLE.getString("json.analyze"), AllIcons.Actions.Find,
+                _ -> this.showAnalyzeDialog(editor)));
+        return panel;
+    }
+
+    /**
+     * 创建工具条按钮（图标 + 提示文本）。
+     *
+     * @param tooltip 提示文本
+     * @param icon    图标
+     * @param action  点击动作
+     * @return 按钮
+     */
+    private JButton createToolButton(final String tooltip, final Icon icon, final ActionListener action) {
+        final JButton button = new JButton();
+        button.setIcon(icon);
+        button.setToolTipText(tooltip);
+        button.setMargin(JBUI.emptyInsets());
+        button.setPreferredSize(new Dimension(BUTTON_SIZE, BUTTON_SIZE));
+        button.addActionListener(action);
+        return button;
+    }
+
+    /**
+     * 修复 JSON：修复成功写回编辑器并通知置信度与修复点；无法修复时提示。
+     *
+     * @param redoButton 重做按钮
+     * @param undoButton 撤消按钮
+     * @param editor     当前编辑
+     */
+    private void repairJson(final JButton redoButton, final JButton undoButton, final EditorTextField editor) {
+        if (Objects.isNull(editor) || Objects.isNull(editor.getProject())) return;
+        final Document document = editor.getDocument();
+        final String snapshot = document.getText();
+        if (StrUtil.isBlank(snapshot)) return;
+        CompletableFuture
+                .supplyAsync(() -> JsonRepairer.repair(snapshot), AppExecutorUtil.getAppExecutorService())
+                .thenAccept(result -> ApplicationManager.getApplication().invokeLater(() -> {
+                    if (Objects.isNull(result)) {
+                        Notifier.notifyError(BUNDLE.getString("json.repair.failed"), editor.getProject());
+                        return;
+                    }
+                    if (result.fixes().isEmpty()) {
+                        Notifier.notifyInfo(BUNDLE.getString("json.repair.valid"), editor.getProject());
+                        return;
+                    }
+                    if (!snapshot.equals(document.getText())) {
+                        return;
+                    }
+                    WriteCommandAction.runWriteCommandAction(editor.getProject(), () -> {
+                        this.pushHistory(this.undoStack, snapshot);
+                        document.setText(result.json());
+                        this.updateButtons(undoButton, redoButton);
+                    });
+                    // 修复摘要：置信度 + 修复点列表
+                    final String detail = result.fixes().stream()
+                            .map(fix -> BUNDLE.getString(fix.i18nKey()))
+                            .collect(Collectors.joining(", "));
+                    final String summary = BUNDLE.getString("json.repair.success")
+                            .formatted((int) (result.confidence() * 100), detail);
+                    // 低置信度（结构性改动多）时以警告样式提示人工核对
+                    if (result.confidence() < LOW_CONFIDENCE_THRESHOLD) {
+                        Notifier.notifyWarn("%s %s".formatted(summary, BUNDLE.getString("json.repair.low.confidence")), editor.getProject());
+                    } else {
+                        Notifier.notifyInfo(summary, editor.getProject());
+                    }
+                }))
+                .exceptionally(error -> {
+                    Notifier.notifyError(error.getMessage(), editor.getProject());
+                    return null;
+                });
+    }
+
+    /**
+     * 反扁平化 JSON：键路径冲突时提示，不写回。
+     *
+     * @param redoButton 重做按钮
+     * @param undoButton 撤消按钮
+     * @param editor     当前编辑
+     */
+    private void unflattenJson(final JButton redoButton, final JButton undoButton, final EditorTextField editor) {
+        if (Objects.isNull(editor) || Objects.isNull(editor.getProject())) return;
+        final Document document = editor.getDocument();
+        final String snapshot = document.getText();
+        if (StrUtil.isBlank(snapshot)) return;
+        CompletableFuture
+                .supplyAsync(() -> JsonUnflattener.unflatten(snapshot), AppExecutorUtil.getAppExecutorService())
+                .thenAccept(result -> ApplicationManager.getApplication().invokeLater(() -> {
+                    if (Objects.isNull(result)) {
+                        Notifier.notifyError(BUNDLE.getString("json.unflatten.conflict"), editor.getProject());
+                        return;
+                    }
+                    if (!snapshot.equals(document.getText())) {
+                        return;
+                    }
+                    WriteCommandAction.runWriteCommandAction(editor.getProject(), () -> {
+                        this.pushHistory(this.undoStack, snapshot);
+                        document.setText(result);
+                        this.updateButtons(undoButton, redoButton);
+                    });
+                }))
+                .exceptionally(error -> {
+                    Notifier.notifyError(error.getMessage(), editor.getProject());
+                    return null;
+                });
+    }
+
+    /**
+     * 展示 JSON 结构分析弹窗。
+     *
+     * @param editor 当前编辑
+     */
+    private void showAnalyzeDialog(final EditorTextField editor) {
+        if (Objects.isNull(editor) || Objects.isNull(editor.getProject())) return;
+        final String text = editor.getText();
+        if (StrUtil.isBlank(text)) return;
+        ApplicationManager.getApplication().invokeLater(() -> new JsonAnalyzeDialog(editor.getProject(), text).show());
     }
 
     /**
@@ -179,7 +347,45 @@ public class MainPanel {
         searchBox.setBorder(MainPanel.this.createBorderByDefaultColor());
         searchBox.setPreferredSize(new Dimension(SEARCH_BOX_WIDTH, SEARCH_BOX_HEIGHT));
         searchBox.setToolTipText(BUNDLE.getString("json.tool.tip.text"));
+        // 搜索历史浏览：↑/↓ 切换最近查询
+        searchBox.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(final KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_UP) {
+                    MainPanel.this.moveSearchHistory(-1, searchBox);
+                } else if (e.getKeyCode() == KeyEvent.VK_DOWN) {
+                    MainPanel.this.moveSearchHistory(1, searchBox);
+                }
+            }
+        });
         return searchBox;
+    }
+
+    /**
+     * 浏览搜索历史（↑/↓ 循环切换）。
+     *
+     * @param direction 方向（-1 上一条，1 下一条）
+     * @param searchBox 搜索框
+     */
+    private void moveSearchHistory(final int direction, final JTextField searchBox) {
+        if (this.searchHistory.isEmpty()) {
+            return;
+        }
+        this.searchHistoryIndex = Math.floorMod(this.searchHistoryIndex + direction, this.searchHistory.size());
+        searchBox.setText(this.searchHistory.get(this.searchHistoryIndex));
+    }
+
+    /**
+     * 记录搜索历史（去重，最新在前，超上限淘汰最旧）。
+     *
+     * @param expression 查询表达式
+     */
+    private void addSearchHistory(final String expression) {
+        this.searchHistory.remove(expression);
+        this.searchHistory.add(0, expression);
+        while (this.searchHistory.size() > MAX_SEARCH_HISTORY) {
+            this.searchHistory.remove(this.searchHistory.size() - 1);
+        }
     }
 
     /**
@@ -336,6 +542,8 @@ public class MainPanel {
         final Document document = editor.getDocument();
         final String snapshot = document.getText();
         if (snapshot.isEmpty()) return;
+        // 记录搜索历史（供 ↑/↓ 浏览）
+        this.addSearchHistory(searchExpression);
         final String original = this.originalJson.updateAndGet(current -> StrUtil.isEmpty(current) ? snapshot : current);
         CompletableFuture
                 .supplyAsync(() -> new JsonSearchEngine().process(original, searchExpression), AppExecutorUtil.getAppExecutorService())

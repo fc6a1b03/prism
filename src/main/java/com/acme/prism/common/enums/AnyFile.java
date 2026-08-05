@@ -50,6 +50,10 @@ public enum AnyFile {
      */
     XLSX,
     /**
+     * 结构化查询语言
+     */
+    SQL,
+    /**
      * Base64编码
      */
     BASE64,
@@ -66,6 +70,7 @@ public enum AnyFile {
     public String extension() {
         return switch (this) {
             case CLASS, RECORD -> "java";
+            case SQL -> "sql";
             case JSON, XML, YAML, TOML, CSV, XLSX, PROPERTIES -> this.name().toLowerCase(Locale.ROOT);
             default -> "txt";
         };

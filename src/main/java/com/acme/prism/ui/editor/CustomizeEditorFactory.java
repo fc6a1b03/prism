@@ -6,6 +6,7 @@ import com.intellij.openapi.editor.ScrollingModel;
 import com.intellij.openapi.editor.event.VisibleAreaEvent;
 import com.intellij.openapi.editor.event.VisibleAreaListener;
 import com.intellij.openapi.editor.ex.EditorEx;
+import com.intellij.openapi.editor.highlighter.EditorHighlighterFactory;
 import com.intellij.openapi.fileTypes.LanguageFileType;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiDocumentManager;
@@ -87,6 +88,11 @@ public final class CustomizeEditorFactory {
             @Override
             protected @NotNull EditorEx createEditor() {
                 final EditorEx editor = Editor.configureEditor(project, super.createEditor(), language.getFileType());
+                // JSON 语言定制高亮：null 单独灰色，与 true/false 关键字色区分（仅影响工具窗口内编辑器）
+                if (language == SupportedLanguages.JSON) {
+                    editor.setHighlighter(EditorHighlighterFactory.getInstance()
+                            .createEditorHighlighter(new PrismJsonSyntaxHighlighter(project), editor.getColorsScheme()));
+                }
                 // 光标置于文档开头（默认置顶）
                 editor.getCaretModel().moveToOffset(0);
                 // 实时记录视口滚动偏移（编辑器创建/页签重建时挂载）。

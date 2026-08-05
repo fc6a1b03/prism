@@ -24,6 +24,9 @@ JSON 侧支持编辑、压缩、转义、JsonPath 查询、Java 类与 JSON 结�
 ## 主要能力
 
 - JSON 编辑、格式化、压缩、转义与反转义
+- **自动修复损坏 JSON**（单引号/缺逗号/尾逗号/注释/JSONP 包装/裸键/非标准字面量），带置信度与修复日志
+- **按键递归排序、扁平化/还原**（点号键与嵌套结构互转）、**JSON Schema（Draft 7）生成**
+- **右侧面板深度工具**：结构分析（键/对象/数组/深度/大小统计、重复键检测）、树形面板展开全部/折叠全部、选中节点路径与完整值详情
 - 从 JSON 生成 Java Class / Record
 - 从 Java 类复制 JSON 结构
 - JsonPath / JMESPath 查询与树形浏览
@@ -77,7 +80,7 @@ src/main/java/com/acme/prism
 │   ├── console      # 控制台 JSON 推送
 │   ├── editor       # JSON 折叠、编辑器状态
 │   ├── fileinfo     # 项目树文件信息
-│   ├── json         # JSON 操作（格式化/压缩/转义/搜索）
+│   ├── json         # JSON 操作（格式化/压缩/转义/搜索/修复/排序/扁平化/Schema/分析）
 │   ├── minimap      # 代码地图
 │   ├── notice       # 通知系统
 │   ├── parser       # 解析与格式转换

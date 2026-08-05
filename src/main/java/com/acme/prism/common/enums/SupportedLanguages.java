@@ -29,6 +29,7 @@ public enum SupportedLanguages {
     TEXT(PlainTextFileType.INSTANCE, AnyFile.TEXT),
     BASE64(PlainTextFileType.INSTANCE, AnyFile.BASE64),
     URL_PARAMS(PlainTextFileType.INSTANCE, AnyFile.URL_PARAMS),
+    SQL(PlainTextFileType.INSTANCE, AnyFile.SQL),
     PROPERTIES(PropertiesFileType.INSTANCE, AnyFile.PROPERTIES);
     private static final Map<AnyFile, SupportedLanguages> BY_ANY_FILE = createIndex();
     private final AnyFile extension;
