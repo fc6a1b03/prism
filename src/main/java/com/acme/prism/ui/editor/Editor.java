@@ -1,5 +1,6 @@
 package com.acme.prism.ui.editor;
 
+import com.acme.prism.common.enums.SupportedLanguages;
 import com.acme.prism.core.editor.FileDropHandler;
 import com.intellij.openapi.actionSystem.IdeActions;
 import com.intellij.openapi.application.ApplicationManager;
@@ -37,6 +38,20 @@ public interface Editor {
      */
     default EditorTextField create(final Project project) {
         return new EditorTextField();
+    }
+
+    /**
+     * 统一创建带语言高亮的编辑器字段（JSON 语言自动注入 null 独立着色）。
+     *
+     * <p>各对话框复用此入口，避免 {@code new CustomizeEditorFactory(...)} 散落多处。</p>
+     *
+     * @param project  项目
+     * @param language 语言
+     * @param fileName 虚拟文件名（用于语言高亮识别）
+     * @return {@link EditorTextField }
+     */
+    static EditorTextField createEditorField(final Project project, final SupportedLanguages language, final String fileName) {
+        return new CustomizeEditorFactory(language, fileName).create(project);
     }
 
     /**

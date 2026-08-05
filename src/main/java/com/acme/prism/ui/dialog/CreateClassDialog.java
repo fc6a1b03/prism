@@ -2,18 +2,23 @@ package com.acme.prism.ui.dialog;
 
 import cn.hutool.core.util.StrUtil;
 import com.acme.prism.common.enums.AnyFile;
+import com.acme.prism.common.enums.SupportedLanguages;
 import com.acme.prism.core.json.JsonFormatter;
 import com.acme.prism.core.notice.Notifier;
 import com.acme.prism.core.parser.JsonParser;
 import com.acme.prism.core.parser.converter.JavaStructure;
+import com.acme.prism.ui.editor.Editor;
 import com.alibaba.fastjson2.JSON;
 import com.intellij.ide.highlighter.JavaFileType;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.ValidationInfo;
 import com.intellij.psi.PsiDirectory;
@@ -21,8 +26,9 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiFileFactory;
 import com.intellij.psi.PsiJavaFile;
 import com.intellij.psi.codeStyle.CodeStyleManager;
+import com.intellij.ui.EditorTextField;
 import com.intellij.ui.components.JBRadioButton;
-import com.intellij.ui.components.JBTextArea;
+import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.ui.JBUI;
@@ -30,8 +36,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.io.Serial;
@@ -51,7 +55,10 @@ public class CreateClassDialog extends DialogWrapper {
     private static final ResourceBundle BUNDLE = ResourceBundle.getBundle("messages.PrismBundle");
 
     private final Project project;
-    private final JBTextArea jsonTextArea;
+    /**
+     * JSON 输入编辑器（JSON 语法高亮 + 行号）
+     */
+    private final EditorTextField jsonEditor;
     private final JBTextField classNameField;
     private final PsiDirectory targetDirectory;
     private final JBRadioButton classRadioButton;
@@ -68,20 +75,21 @@ public class CreateClassDialog extends DialogWrapper {
      */
     private static final int CLASS_NAME_FIELD_COLUMNS = 20;
     /**
-     * JSON 输入区行数
+     * 对话框初始宽度
      */
-    private static final int JSON_AREA_ROWS = 10;
+    private static final int DIALOG_WIDTH = 640;
     /**
-     * JSON 输入区列数
+     * 对话框初始高度
      */
-    private static final int JSON_AREA_COLUMNS = 40;
+    private static final int DIALOG_HEIGHT = 420;
 
     public CreateClassDialog(@Nullable final Project project, @NotNull final PsiDirectory targetDirectory) {
         super(project, Boolean.TRUE);
-        this.project = project;
+        // project 为空时兜底默认项目（仅用于编辑器文档创建，不涉及项目持久化）
+        this.project = Objects.requireNonNullElse(project, ProjectManager.getInstance().getDefaultProject());
         this.targetDirectory = targetDirectory;
         this.classNameField = new JBTextField(CLASS_NAME_FIELD_COLUMNS);
-        this.jsonTextArea = new JBTextArea(JSON_AREA_ROWS, JSON_AREA_COLUMNS);
+        this.jsonEditor = Editor.createEditorField(this.project, SupportedLanguages.JSON, "Dummy.json");
         this.classRadioButton = new JBRadioButton(BUNDLE.getString("create.class.type.class"), Boolean.TRUE);
         this.recordRadioButton = new JBRadioButton(BUNDLE.getString("create.class.type.record"), Boolean.FALSE);
         this.jsonFormatTimer = new Timer(FORMAT_DEBOUNCE_MS, _ -> this.scheduleJsonFormatting());
@@ -95,6 +103,7 @@ public class CreateClassDialog extends DialogWrapper {
         super.init();
         this.setModal(Boolean.FALSE);
         this.setResizable(Boolean.TRUE);
+        this.setSize(DIALOG_WIDTH, DIALOG_HEIGHT);
         this.setTitle(BUNDLE.getString("create.class.dialog.title"));
     }
 
@@ -175,48 +184,38 @@ public class CreateClassDialog extends DialogWrapper {
         if (!this.isValidClassName(this.getClassName())) {
             return new ValidationInfo(BUNDLE.getString("create.class.name.invalid"), this.classNameField);
         }
-        if (!JSON.isValid(this.jsonTextArea.getText())) {
-            return new ValidationInfo(BUNDLE.getString("create.class.json.invalid"), this.jsonTextArea);
+        if (!JSON.isValid(this.jsonEditor.getText())) {
+            return new ValidationInfo(BUNDLE.getString("create.class.json.invalid"), this.jsonEditor);
         }
         return null;
     }
 
     @Override
     protected @Nullable JComponent createCenterPanel() {
-        final JPanel dialogPanel = new JPanel(new GridBagLayout());
-        final GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = JBUI.insets(5);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-
+        final JPanel panel = new JPanel(new BorderLayout(0, 10));
+        panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        // 顶部：类型选择 + 类名输入
         final ButtonGroup typeGroup = new ButtonGroup();
         typeGroup.add(this.classRadioButton);
         typeGroup.add(this.recordRadioButton);
-
-        final JPanel radioPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        radioPanel.add(this.classRadioButton);
-        radioPanel.add(this.recordRadioButton);
-
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        dialogPanel.add(new JLabel(BUNDLE.getString("create.class.type.label")), gbc);
-
-        gbc.gridx = 1;
-        dialogPanel.add(radioPanel, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 1;
-        dialogPanel.add(new JLabel(BUNDLE.getString("create.class.name.label")), gbc);
-
-        gbc.gridx = 1;
-        dialogPanel.add(this.classNameField, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 2;
-        dialogPanel.add(new JLabel(BUNDLE.getString("create.class.json.label")), gbc);
-
-        gbc.gridx = 1;
-        dialogPanel.add(new JScrollPane(this.jsonTextArea), gbc);
-        return dialogPanel;
+        final JPanel typePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        typePanel.add(new JLabel(BUNDLE.getString("create.class.type.label")));
+        typePanel.add(this.classRadioButton);
+        typePanel.add(this.recordRadioButton);
+        final JPanel namePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        namePanel.add(new JLabel(BUNDLE.getString("create.class.name.label")));
+        this.classNameField.setPreferredSize(new Dimension(220, JBUI.scale(30)));
+        namePanel.add(this.classNameField);
+        final JPanel topPanel = new JPanel(new BorderLayout(0, 0));
+        topPanel.add(typePanel, BorderLayout.WEST);
+        topPanel.add(namePanel, BorderLayout.EAST);
+        panel.add(topPanel, BorderLayout.NORTH);
+        // 中部：JSON 输入编辑器（语法高亮 + 行号，占主体空间）
+        final JPanel jsonPanel = new JPanel(new BorderLayout(0, 4));
+        jsonPanel.add(new JLabel(BUNDLE.getString("create.class.json.label")), BorderLayout.NORTH);
+        jsonPanel.add(new JBScrollPane(this.jsonEditor), BorderLayout.CENTER);
+        panel.add(jsonPanel, BorderLayout.CENTER);
+        return panel;
     }
 
     private PsiFile addGeneratedClassToFile(final String classText) {
@@ -260,23 +259,13 @@ public class CreateClassDialog extends DialogWrapper {
     }
 
     public String getJsonText() {
-        return this.jsonTextArea.getText().trim();
+        return this.jsonEditor.getText().trim();
     }
 
     private void bindJsonFormattingListener() {
-        this.jsonTextArea.getDocument().addDocumentListener(new DocumentListener() {
+        this.jsonEditor.getDocument().addDocumentListener(new DocumentListener() {
             @Override
-            public void insertUpdate(final DocumentEvent e) {
-                CreateClassDialog.this.restartJsonFormatTimer();
-            }
-
-            @Override
-            public void removeUpdate(final DocumentEvent e) {
-                CreateClassDialog.this.restartJsonFormatTimer();
-            }
-
-            @Override
-            public void changedUpdate(final DocumentEvent e) {
+            public void documentChanged(final DocumentEvent e) {
                 CreateClassDialog.this.restartJsonFormatTimer();
             }
         });
@@ -294,7 +283,7 @@ public class CreateClassDialog extends DialogWrapper {
     }
 
     private void scheduleJsonFormatting() {
-        final String rawText = this.jsonTextArea.getText();
+        final String rawText = this.jsonEditor.getText();
         final long sequence = this.formatSequence.incrementAndGet();
         CompletableFuture
                 .supplyAsync(() -> JSON.isValid(rawText) ? new JsonFormatter().process(rawText) : null, AppExecutorUtil.getAppExecutorService())
@@ -302,12 +291,12 @@ public class CreateClassDialog extends DialogWrapper {
                     if (Objects.isNull(formattedJson) || sequence != this.formatSequence.get()) {
                         return;
                     }
-                    if (!StrUtil.equals(rawText, this.jsonTextArea.getText()) || StrUtil.equals(formattedJson, rawText)) {
+                    if (!StrUtil.equals(rawText, this.jsonEditor.getText()) || StrUtil.equals(formattedJson, rawText)) {
                         return;
                     }
                     this.applyingJsonFormat.set(Boolean.TRUE);
                     try {
-                        this.jsonTextArea.setText(formattedJson);
+                        this.jsonEditor.setText(formattedJson);
                     } finally {
                         this.applyingJsonFormat.set(Boolean.FALSE);
                     }

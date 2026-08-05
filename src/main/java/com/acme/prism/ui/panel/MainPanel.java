@@ -9,6 +9,7 @@ import com.acme.prism.core.parser.JwtParser;
 import com.acme.prism.core.parser.PathParser;
 import com.acme.prism.ui.dialog.ConvertAnyDialog;
 import com.acme.prism.ui.dialog.JsonAnalyzeDialog;
+import com.acme.prism.ui.dialog.JsonValidateDialog;
 import com.acme.prism.ui.editor.JsonFoldingSupport;
 import com.alibaba.fastjson2.JSON;
 import com.intellij.diff.DiffContentFactory;
@@ -202,6 +203,8 @@ public class MainPanel {
                 _ -> this.optJson(redoButton, undoButton, editor.getEditor(), new JsonSchemaGenerator())));
         panel.add(this.createToolButton(BUNDLE.getString("json.mock.generate"), AllIcons.Actions.Rerun,
                 _ -> this.optJson(redoButton, undoButton, editor.getEditor(), new JsonMockGenerator())));
+        panel.add(this.createToolButton(BUNDLE.getString("json.validate"), AllIcons.General.GreenCheckmark,
+                _ -> this.showValidateDialog(editor)));
         panel.add(this.createToolButton(BUNDLE.getString("json.analyze"), AllIcons.Actions.Find,
                 _ -> this.showAnalyzeDialog(editor)));
         return panel;
@@ -319,6 +322,18 @@ public class MainPanel {
         final String text = editor.getText();
         if (StrUtil.isBlank(text)) return;
         ApplicationManager.getApplication().invokeLater(() -> new JsonAnalyzeDialog(editor.getProject(), text).show());
+    }
+
+    /**
+     * 展示 JSON Schema 校验弹窗。
+     *
+     * @param editor 当前编辑
+     */
+    private void showValidateDialog(final EditorTextField editor) {
+        if (Objects.isNull(editor) || Objects.isNull(editor.getProject())) return;
+        final String text = editor.getText();
+        if (StrUtil.isBlank(text)) return;
+        ApplicationManager.getApplication().invokeLater(() -> new JsonValidateDialog(editor.getProject(), text).show());
     }
 
     /**
