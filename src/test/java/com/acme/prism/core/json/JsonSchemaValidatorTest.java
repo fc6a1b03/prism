@@ -142,4 +142,107 @@ class JsonSchemaValidatorTest {
         assertFalse(outcome.issues().isEmpty());
         assertTrue(outcome.issues().getFirst().message().contains("Schema"));
     }
+
+    @Test
+    @DisplayName("正常：format 校验 email 与 date-time")
+    void validatesFormat() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"email\":\"a@b.com\",\"time\":\"2026-01-01T10:00:00Z\"}",
+                "{\"type\":\"object\",\"properties\":{\"email\":{\"type\":\"string\",\"format\":\"email\"}," +
+                        "\"time\":{\"type\":\"string\",\"format\":\"date-time\"}}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "合法 email 与日期应通过");
+
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"email\":\"not-an-email\",\"time\":\"yesterday\"}",
+                "{\"type\":\"object\",\"properties\":{\"email\":{\"type\":\"string\",\"format\":\"email\"}," +
+                        "\"time\":{\"type\":\"string\",\"format\":\"date-time\"}}}"
+        );
+        assertEquals(2, bad.issues().size(), "非法 email 与日期应各报一项");
+    }
+
+    @Test
+    @DisplayName("正常：format 校验 uri 与 ipv4")
+    void validatesUriAndIpv4() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"url\":\"https://example.com\",\"ip\":\"192.168.1.1\"}",
+                "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"format\":\"uri\"}," +
+                        "\"ip\":{\"type\":\"string\",\"format\":\"ipv4\"}}}"
+        );
+        assertTrue(ok.issues().isEmpty());
+    }
+
+    @Test
+    @DisplayName("正常：oneOf 恰好匹配一个")
+    void validatesOneOf() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"v\":\"x\"}",
+                "{\"type\":\"object\",\"properties\":{\"v\":{\"oneOf\":[{\"type\":\"string\"},{\"type\":\"number\"}]}}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "恰好匹配一个子约束应通过");
+
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"v\":true}",
+                "{\"type\":\"object\",\"properties\":{\"v\":{\"oneOf\":[{\"type\":\"string\"},{\"type\":\"number\"}]}}}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("oneOf")),
+                "匹配 0 个应报 oneOf 失败");
+    }
+
+    @Test
+    @DisplayName("正常：anyOf 与 allOf 组合约束")
+    void validatesAnyOfAndAllOf() {
+        final ValidationOutcome anyOk = JsonSchemaValidator.validate(
+                "{\"v\":\"x\"}",
+                "{\"type\":\"object\",\"properties\":{\"v\":{\"anyOf\":[{\"type\":\"number\"},{\"type\":\"string\"}]}}}"
+        );
+        assertTrue(anyOk.issues().isEmpty(), "anyOf 至少一个匹配应通过");
+
+        final ValidationOutcome allBad = JsonSchemaValidator.validate(
+                "{\"v\":5}",
+                "{\"type\":\"object\",\"properties\":{\"v\":{\"allOf\":[{\"type\":\"number\",\"minimum\":10},{\"maximum\":1}]}}}"
+        );
+        assertTrue(allBad.issues().stream().anyMatch(issue -> issue.message().contains("allOf")),
+                "allOf 部分不满足应报失败");
+    }
+
+    @Test
+    @DisplayName("正常：数组长度与元素唯一约束")
+    void validatesArrayConstraints() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"list\":[1,2,3]}",
+                "{\"type\":\"object\",\"properties\":{\"list\":{\"type\":\"array\",\"minItems\":2,\"maxItems\":5,\"uniqueItems\":true}}}"
+        );
+        assertTrue(ok.issues().isEmpty());
+
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"list\":[1,1]}",
+                "{\"type\":\"object\",\"properties\":{\"list\":{\"type\":\"array\",\"minItems\":3,\"uniqueItems\":true}}}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("重复")),
+                "重复元素应报 uniqueItems 失败");
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("过少")),
+                "元素过少应报 minItems 失败");
+    }
+
+    @Test
+    @DisplayName("正常：对象属性数量约束")
+    void validatesObjectProperties() {
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"a\":1,\"b\":2,\"c\":3}",
+                "{\"type\":\"object\",\"maxProperties\":2}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("属性过多")));
+    }
+
+    @Test
+    @DisplayName("正常：排他边界与倍数约束")
+    void validatesExclusiveAndMultipleOf() {
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"n\":5}",
+                "{\"type\":\"object\",\"properties\":{\"n\":{\"type\":\"number\",\"exclusiveMinimum\":5,\"multipleOf\":3}}}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("排他最小值")));
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("倍数")));
+    }
 }
