@@ -73,6 +73,11 @@ intellijPlatform {
         version = project.version.toString()
         // sinceBuild 自 IGP 2.14 起默认取目标平台 major build（2026.2 → 262），无需显式声明
         changeNotes = """
+            <b>0.20.6</b>
+            <ul>
+                <li>Schema 校验器补全关键字：format（email/date-time/date/time/uri/uuid/ipv4/ipv6）、oneOf/anyOf/allOf 组合约束、minItems/maxItems/uniqueItems、minProperties/maxProperties、exclusiveMinimum/exclusiveMaximum、multipleOf。</li>
+                <li>组合约束独立校验（不污染主失败项与计数），正则预编译，时间格式用 java.time 解析。</li>
+            </ul>
             <b>0.20.5</b>
             <ul>
                 <li>JSON Schema 校验：新增 JsonSchemaValidator（type/required/enum/范围/items/pattern 逐字段校验）与校验弹窗（目标 JSON 自动带入、Schema 自动识别或一键生成、失败项表格展示），工具条新增校验按钮。</li>
