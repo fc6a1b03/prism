@@ -73,6 +73,15 @@ intellijPlatform {
         version = project.version.toString()
         // sinceBuild 自 IGP 2.14 起默认取目标平台 major build（2026.2 → 262），无需显式声明
         changeNotes = """
+            <b>0.20.9</b>
+            <ul>
+                <li>JSON Schema 升级最新标准 2020-12：生成器 \$schema 标识更新，Draft 7 文案残留清零（文档/i18n/注释）。</li>
+                <li>JSON 修复扩展：Markdown 代码块剥离、日志前缀剥离、特殊引号转换、值间缺逗号（连续多缺循环补齐）、截断 JSON 补闭合括号（依据 jsonrepair 官方能力清单）。</li>
+                <li>Schema 校验器补全关键字：format（email/date-time/uri/ipv4 等）、oneOf/anyOf/allOf/not 组合约束、patternProperties、additionalProperties（false 与 schema 形式）、const（BigDecimal 数值相等）、prefixItems 元组、minItems/uniqueItems、minProperties、exclusiveMinimum/Maximum、multipleOf。</li>
+                <li>校验弹窗增强：失败项双击定位跳转（只读表格、选中键名精确）、校验/分析空内容提示。</li>
+                <li>修复：findKeyOffset 匹配被字符串开关跳过、VALUE_MISSING_COMMA 分组引用错位。</li>
+                <li>新增 27 个单元测试（总 501 全绿），i18n 166 键双文件一致。</li>
+            </ul>
             <b>0.20.6</b>
             <ul>
                 <li>Schema 校验器补全关键字：format（email/date-time/date/time/uri/uuid/ipv4/ipv6）、oneOf/anyOf/allOf 组合约束、minItems/maxItems/uniqueItems、minProperties/maxProperties、exclusiveMinimum/exclusiveMaximum、multipleOf。</li>

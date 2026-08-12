@@ -66,10 +66,10 @@ class JsonSchemaGeneratorTest {
     }
 
     @Test
-    @DisplayName("正常：包含 Draft 7 标识")
-    void includesDraft7Marker() {
+    @DisplayName("正常：包含最新标准（2020-12）标识")
+    void includesLatestDraftMarker() {
         final JSONObject schema = JSON.parseObject(generator.process("{\"a\":1}"));
-        assertTrue(schema.getString("$schema").contains("draft-07"), "应包含 Draft 7 schema 标识");
+        assertTrue(schema.getString("$schema").contains("2020-12"), "应包含最新标准 2020-12 schema 标识");
     }
 
     @Test

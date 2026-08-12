@@ -245,4 +245,114 @@ class JsonSchemaValidatorTest {
         assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("排他最小值")));
         assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("倍数")));
     }
+
+    @Test
+    @DisplayName("正常：patternProperties 动态键名校验")
+    void validatesPatternProperties() {
+        // learnjsonschema 2020-12 案例：小写键必须为整数
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"foo\":1,\"bar\":2}",
+                "{\"type\":\"object\",\"patternProperties\":{\"^[a-z]+$\":{\"type\":\"integer\"}}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "匹配动态键名且类型正确应通过");
+
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"foo\":\"x\"}",
+                "{\"type\":\"object\",\"patternProperties\":{\"^[a-z]+$\":{\"type\":\"integer\"}}}"
+        );
+        assertEquals(1, bad.issues().size());
+        assertEquals("$.foo", bad.issues().getFirst().path());
+    }
+
+    @Test
+    @DisplayName("正常：additionalProperties false 拒绝未知字段")
+    void rejectsAdditionalProperties() {
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"name\":\"x\",\"extra\":1}",
+                "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("additionalProperties")),
+                "未声明字段应被拒绝");
+
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"name\":\"x\"}",
+                "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+        );
+        assertTrue(ok.issues().isEmpty(), "仅声明字段应通过");
+    }
+
+    @Test
+    @DisplayName("正常：const 单一值约束")
+    void validatesConst() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"v\":\"fixed\"}",
+                "{\"type\":\"object\",\"properties\":{\"v\":{\"const\":\"fixed\"}}}"
+        );
+        assertTrue(ok.issues().isEmpty());
+
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"v\":\"other\"}",
+                "{\"type\":\"object\",\"properties\":{\"v\":{\"const\":\"fixed\"}}}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("const")));
+    }
+
+    @Test
+    @DisplayName("正常：prefixItems 数组元组校验（2020-12）")
+    void validatesPrefixItems() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"pair\":[\"a\",1]}",
+                "{\"type\":\"object\",\"properties\":{\"pair\":{\"type\":\"array\",\"prefixItems\":[{\"type\":\"string\"},{\"type\":\"integer\"}]}}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "元组位置类型匹配应通过");
+
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"pair\":[1,\"a\"]}",
+                "{\"type\":\"object\",\"properties\":{\"pair\":{\"type\":\"array\",\"prefixItems\":[{\"type\":\"string\"},{\"type\":\"integer\"}]}}}"
+        );
+        assertEquals(2, bad.issues().size(), "两个位置类型均不匹配应各报一项");
+    }
+
+    @Test
+    @DisplayName("正常：const 数值相等（1 与 1.0 视为相等）")
+    void validatesConstNumericEquality() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"v\":1.0}",
+                "{\"type\":\"object\",\"properties\":{\"v\":{\"const\":1}}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "数值 const 应按数值相等比较");
+    }
+
+    @Test
+    @DisplayName("正常：additionalProperties 为 schema 时校验未知字段")
+    void validatesAdditionalPropertiesSchema() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"name\":\"x\",\"extra\":1}",
+                "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"additionalProperties\":{\"type\":\"integer\"}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "未知字段符合子 schema 应通过");
+
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"name\":\"x\",\"extra\":\"str\"}",
+                "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"additionalProperties\":{\"type\":\"integer\"}}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.path().equals("$.extra")),
+                "未知字段不符合子 schema 应报错");
+    }
+
+    @Test
+    @DisplayName("正常：not 否定约束")
+    void validatesNot() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"v\":\"a\"}",
+                "{\"type\":\"object\",\"properties\":{\"v\":{\"not\":{\"type\":\"number\"}}}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "不匹配否定约束应通过");
+
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"v\":5}",
+                "{\"type\":\"object\",\"properties\":{\"v\":{\"not\":{\"type\":\"number\"}}}}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("not")));
+    }
 }

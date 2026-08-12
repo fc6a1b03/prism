@@ -3,7 +3,9 @@ package com.acme.prism.core.json;
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson2.JSON;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 import java.util.regex.MatchResult;
@@ -32,6 +34,10 @@ public final class JsonRepairer implements JsonOperation {
      */
     private static final String BOM = "\uFEFF";
     /**
+     * Markdown 代码块标记
+     */
+    private static final String FENCE_MARKER = "```";
+    /**
      * 字符串占位符前缀
      */
     private static final String PLACEHOLDER_PREFIX = "__PRISM_STR_";
@@ -53,6 +59,12 @@ public final class JsonRepairer implements JsonOperation {
      */
     private static final Pattern MISSING_COMMA = Pattern.compile("(}|]|\")(\\s*)(\\{|\\[|\"|__PRISM_STR_\\d+__)");
     /**
+     * 值间缺逗号模式：值边界（数字/字面量/占位符）后紧跟新值或键开头（需空白分隔）。
+     * <p>内部分组必须用非捕获组 {@code (?:...)}，避免替换串 {@code $n} 引用错位。</p>
+     */
+    private static final Pattern VALUE_MISSING_COMMA = Pattern.compile(
+            "(__PRISM_STR_\\d+__|\\d+(?:\\.\\d+)?|true|false|null)(\\s+)(__PRISM_STR_\\d+__|\\{|\\[|\"|\\d+(?:\\.\\d+)?|true|false|null)");
+    /**
      * 非标准字面量模式
      */
     private static final Pattern LITERAL = Pattern.compile("\\b(undefined|None|True|False|NaN|Infinity)\\b");
@@ -69,6 +81,18 @@ public final class JsonRepairer implements JsonOperation {
          * JSONP 包装剥离
          */
         JSONP("json.repair.fix.jsonp", 0.15),
+        /**
+         * Markdown 代码块剥离
+         */
+        FENCE("json.repair.fix.fence", 0.10),
+        /**
+         * 日志前缀剥离
+         */
+        LOG_PREFIX("json.repair.fix.log.prefix", 0.10),
+        /**
+         * 特殊引号转换
+         */
+        SPECIAL_QUOTE("json.repair.fix.special.quote", 0.05),
         /**
          * 单引号转双引号
          */
@@ -89,6 +113,10 @@ public final class JsonRepairer implements JsonOperation {
          * 移除尾逗号
          */
         TRAILING_COMMA("json.repair.fix.trailing.comma", 0.05),
+        /**
+         * 补齐缺失闭合括号（截断 JSON）
+         */
+        MISSING_BRACKET("json.repair.fix.missing.bracket", 0.10),
         /**
          * 非标准字面量规范化
          */
@@ -160,22 +188,36 @@ public final class JsonRepairer implements JsonOperation {
             text = text.substring(1);
             fixes.add(FixType.BOM);
         }
-        // 2. 剥离 JSONP 包装
+        // 2. 剥离 Markdown 代码块（```json ... ```）
+        final String fenced = stripFencedCodeBlock(text);
+        if (Objects.nonNull(fenced)) {
+            text = fenced;
+            fixes.add(FixType.FENCE);
+        }
+        // 3. 剥离 JSONP 包装
         final String stripped = stripJsonp(text);
         if (Objects.nonNull(stripped)) {
             text = stripped;
             fixes.add(FixType.JSONP);
         }
-        // 3. 单引号转双引号（规范化后字符串统一为双引号）
+        // 4. 剥离日志前缀（INFO: {...} / 时间戳前缀）
+        final String logStripped = stripLogPrefix(text);
+        if (Objects.nonNull(logStripped)) {
+            text = logStripped;
+            fixes.add(FixType.LOG_PREFIX);
+        }
+        // 5. 特殊引号转标准引号（“ ” ‘ ’ → " '）
+        text = normalizeSpecialQuotes(text, fixes);
+        // 6. 单引号转双引号（规范化后字符串统一为双引号）
         text = normalizeSingleQuotes(text, fixes);
-        // 4. 未加引号的键补引号
+        // 7. 未加引号的键补引号
         text = fixUnquotedKeys(text, fixes);
-        // 5. 剥离注释
+        // 8. 剥离注释
         text = stripComments(text, fixes);
-        // 6. 提取字符串为占位符，保护值内容
+        // 9. 提取字符串为占位符，保护值内容
         final StringExtraction extraction = extractStrings(text);
         String skeleton = extraction.skeleton();
-        // 7. 骨架修复（骨架无字符串内容，正则安全）
+        // 10. 骨架修复（骨架无字符串内容，正则安全）
         final String beforeTrailing = skeleton;
         skeleton = TRAILING_COMMA.matcher(skeleton).replaceAll("$1");
         if (!skeleton.equals(beforeTrailing)) {
@@ -186,14 +228,32 @@ public final class JsonRepairer implements JsonOperation {
         if (!skeleton.equals(beforeMissing)) {
             fixes.add(FixType.MISSING_COMMA);
         }
+        // 值间缺逗号：循环应用直至稳定（连续缺逗号如 [1 2 3] 需多轮补齐）
+        final String beforeValueComma = skeleton;
+        while (true) {
+            final String next = VALUE_MISSING_COMMA.matcher(skeleton).replaceAll("$1,$2$3");
+            if (next.equals(skeleton)) {
+                break;
+            }
+            skeleton = next;
+        }
+        if (!skeleton.equals(beforeValueComma)) {
+            fixes.add(FixType.MISSING_COMMA);
+        }
         final String beforeLiteral = skeleton;
         skeleton = LITERAL.matcher(skeleton).replaceAll(JsonRepairer::normalizeLiteral);
         if (!skeleton.equals(beforeLiteral)) {
             fixes.add(FixType.LITERAL);
         }
-        // 8. 还原字符串
+        // 11. 补齐缺失闭合括号（截断 JSON 场景）
+        final String beforeBracket = skeleton;
+        skeleton = closeBrackets(skeleton);
+        if (!skeleton.equals(beforeBracket)) {
+            fixes.add(FixType.MISSING_BRACKET);
+        }
+        // 12. 还原字符串
         final String restored = restoreStrings(skeleton, extraction.strings());
-        // 9. 合法性验证，失败不返回修复结果（绝不写回非法内容）
+        // 13. 合法性验证，失败不返回修复结果（绝不写回非法内容）
         if (!JSON.isValid(restored)) {
             return null;
         }
@@ -227,6 +287,124 @@ public final class JsonRepairer implements JsonOperation {
             value -= fix.penalty();
         }
         return Math.max(value, 0.1d);
+    }
+
+    /**
+     * 剥离 Markdown 代码块（{@code ```json ... ```} 或 {@code ``` ... ```}）。
+     *
+     * @param text 输入文本
+     * @return 代码块内容；非代码块输入返回 {@code null}
+     */
+    private static String stripFencedCodeBlock(final String text) {
+        final String trimmed = text.stripLeading();
+        if (!trimmed.startsWith(FENCE_MARKER)) {
+            return null;
+        }
+        final int newline = trimmed.indexOf('\n');
+        final String body = newline >= 0 ? trimmed.substring(newline + 1) : "";
+        final String cleaned = stripTrailingFence(body).strip();
+        return JSON.isValid(cleaned) ? cleaned : null;
+    }
+
+    /**
+     * 剥离尾部代码块标记。
+     *
+     * @param body 代码块内容
+     * @return 剥离尾部标记后的内容
+     */
+    private static String stripTrailingFence(final String body) {
+        final int fenceIndex = body.lastIndexOf(FENCE_MARKER);
+        return fenceIndex >= 0 ? body.substring(0, fenceIndex) : body;
+    }
+
+    /**
+     * 剥离日志前缀（{@code INFO: {...}}、时间戳前缀等）。
+     * <p>取首个 {@code {} 或 {@code [} 之后的内容，仅当前缀不含引号（非 JSON 内容）时剥离。</p>
+     *
+     * @param text 输入文本
+     * @return 剥离前缀后的内容；非日志输入返回 {@code null}
+     */
+    private static String stripLogPrefix(final String text) {
+        final int structureIndex = firstStructureIndex(text);
+        if (structureIndex <= 0) {
+            return null;
+        }
+        // 前缀含引号说明是 JSON 内容的一部分（如字符串值），非纯日志前缀
+        if (text.substring(0, structureIndex).indexOf('"') >= 0) {
+            return null;
+        }
+        final String candidate = text.substring(structureIndex);
+        return JSON.isValid(candidate) ? candidate : null;
+    }
+
+    /**
+     * 定位首个 JSON 结构字符（{@code {} 或 {@code [}）。
+     *
+     * @param text 输入文本
+     * @return 结构字符索引；不存在返回 -1
+     */
+    private static int firstStructureIndex(final String text) {
+        final int brace = text.indexOf('{');
+        final int bracket = text.indexOf('[');
+        if (brace < 0) {
+            return bracket;
+        }
+        return bracket < 0 ? brace : Math.min(brace, bracket);
+    }
+
+    /**
+     * 特殊引号转标准引号（弯引号 {@code “ ” ‘ ’} → 直引号 {@code " '}）。
+     *
+     * @param text  输入文本
+     * @param fixes 修复日志
+     * @return 规范化后的文本
+     */
+    private static String normalizeSpecialQuotes(final String text, final List<FixType> fixes) {
+        if (text.indexOf('“') < 0 && text.indexOf('”') < 0 && text.indexOf('‘') < 0 && text.indexOf('’') < 0) {
+            return text;
+        }
+        fixes.add(FixType.SPECIAL_QUOTE);
+        return text.replace('“', '"').replace('”', '"').replace('‘', '\'').replace('’', '\'');
+    }
+
+    /**
+     * 补齐缺失的闭合括号（截断 JSON 场景，如 {@code {"a":1} → {"a":1}}）。
+     *
+     * @param skeleton 骨架（字符串已占位化，无引号干扰）
+     * @return 补齐闭合括号后的骨架；括号已闭合时原样返回
+     */
+    private static String closeBrackets(final String skeleton) {
+        final Deque<Character> stack = new ArrayDeque<>();
+        for (int i = 0; i < skeleton.length(); i++) {
+            final char c = skeleton.charAt(i);
+            if (c == '{' || c == '[') {
+                stack.push(c);
+            } else if (c == '}' || c == ']') {
+                if (!stack.isEmpty() && isMatching(stack.peek(), c)) {
+                    stack.pop();
+                }
+            }
+        }
+        if (stack.isEmpty()) {
+            return skeleton;
+        }
+        final StringBuilder sb = new StringBuilder(skeleton.length() + stack.size());
+        sb.append(skeleton);
+        while (!stack.isEmpty()) {
+            sb.append(stack.pop() == '{' ? '}' : ']');
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 括号是否匹配。
+     *
+     * @param open  开括号
+     * @param close 闭括号
+     * @return boolean
+     */
+    private static boolean isMatching(final char open, final char close) {
+        return open == '{' && close == '}' || open == '[' && close == ']';
     }
 
     /**
