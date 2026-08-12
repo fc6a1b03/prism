@@ -1,5 +1,6 @@
 package com.acme.prism.ui.dialog;
 
+import cn.hutool.core.convert.Convert;
 import cn.hutool.core.util.StrUtil;
 import com.acme.prism.common.enums.SupportedLanguages;
 import com.acme.prism.core.json.JsonSchemaGenerator;
@@ -10,6 +11,7 @@ import com.acme.prism.ui.editor.Editor;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.ui.EditorTextField;
@@ -21,7 +23,10 @@ import org.jetbrains.annotations.NotNull;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.List;
+import java.util.Objects;
 import java.util.ResourceBundle;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
@@ -69,6 +74,10 @@ public class JsonValidateDialog extends DialogWrapper {
      */
     private EditorTextField schemaEditor;
     /**
+     * 校验目标 JSON 编辑器（只读，用于失败项定位跳转）
+     */
+    private EditorTextField jsonViewer;
+    /**
      * 结果汇总标签
      */
     private JLabel summaryLabel;
@@ -111,9 +120,9 @@ public class JsonValidateDialog extends DialogWrapper {
     private JComponent createTargetPanel() {
         final JPanel panel = new JPanel(new BorderLayout(0, 4));
         panel.add(new JLabel(BUNDLE.getString("json.validate.target")), BorderLayout.NORTH);
-        final EditorTextField viewer = this.createEditor(Boolean.FALSE);
-        viewer.setText(this.jsonText);
-        panel.add(new JBScrollPane(viewer), BorderLayout.CENTER);
+        this.jsonViewer = this.createEditor(Boolean.FALSE);
+        this.jsonViewer.setText(this.jsonText);
+        panel.add(new JBScrollPane(this.jsonViewer), BorderLayout.CENTER);
         return panel;
     }
 
@@ -151,12 +160,23 @@ public class JsonValidateDialog extends DialogWrapper {
         header.add(this.summaryLabel, BorderLayout.CENTER);
         header.add(validateButton, BorderLayout.EAST);
         panel.add(header, BorderLayout.NORTH);
-        this.resultTable = new JBTable(new DefaultTableModel(
+        this.resultTable = new JBTable(createReadOnlyModel(
                 new Object[0][0],
                 new Object[]{BUNDLE.getString("json.validate.path"), BUNDLE.getString("json.validate.expected"),
                         BUNDLE.getString("json.validate.actual"), BUNDLE.getString("json.validate.message")}
         ));
         this.resultTable.setFillsViewportHeight(Boolean.TRUE);
+        // 双击失败项 → 目标 JSON 编辑器定位到对应路径
+        this.resultTable.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(final MouseEvent e) {
+                if (e.getClickCount() == 2 && JsonValidateDialog.this.resultTable.getSelectedRow() >= 0) {
+                    final Object pathValue = JsonValidateDialog.this.resultTable.getValueAt(
+                            JsonValidateDialog.this.resultTable.getSelectedRow(), 0);
+                    JsonValidateDialog.this.locatePath(Convert.toStr(pathValue));
+                }
+            }
+        });
         // 结果区固定最小高度，避免被 Schema 编辑器挤压
         final JBScrollPane resultScroll = new JBScrollPane(this.resultTable);
         resultScroll.setPreferredSize(new Dimension(0, RESULT_TABLE_HEIGHT));
@@ -249,7 +269,7 @@ public class JsonValidateDialog extends DialogWrapper {
     }
 
     /**
-     * 构建结果表格模型。
+     * 构建结果表格模型（只读，双击用于定位跳转而非编辑单元格）。
      *
      * @param issues 失败项
      * @return 表格模型
@@ -258,10 +278,102 @@ public class JsonValidateDialog extends DialogWrapper {
         final Object[][] rows = issues.stream()
                 .map(issue -> new Object[]{issue.path(), issue.expected(), issue.actual(), issue.message()})
                 .toArray(Object[][]::new);
-        return new DefaultTableModel(rows, new Object[]{
+        return createReadOnlyModel(rows, new Object[]{
                 BUNDLE.getString("json.validate.path"), BUNDLE.getString("json.validate.expected"),
                 BUNDLE.getString("json.validate.actual"), BUNDLE.getString("json.validate.message")
         });
+    }
+
+    /**
+     * 创建只读表格模型（禁止单元格编辑，双击保留给定位跳转）。
+     *
+     * @param rows    数据行
+     * @param headers 表头
+     * @return 表格模型
+     */
+    private static DefaultTableModel createReadOnlyModel(final Object[][] rows, final Object[] headers) {
+        return new DefaultTableModel(rows, headers) {
+            @Override
+            public boolean isCellEditable(final int row, final int column) {
+                return false;
+            }
+        };
+    }
+
+    /**
+     * 在目标 JSON 编辑器中定位 JSONPath 对应的键位置（选中并滚动到可见）。
+     *
+     * @param jsonPath 失败项路径（如 {@code $.user.name}）
+     */
+    private void locatePath(final String jsonPath) {
+        final String lastKey = extractLastKey(jsonPath);
+        if (StrUtil.isBlank(lastKey)) {
+            return;
+        }
+        final int offset = findKeyOffset(this.jsonText, lastKey);
+        if (offset < 0 || Objects.isNull(this.jsonViewer) || Objects.isNull(this.jsonViewer.getEditor())) {
+            return;
+        }
+        final com.intellij.openapi.editor.Editor editor = this.jsonViewer.getEditor();
+        editor.getCaretModel().moveToOffset(offset);
+        editor.getScrollingModel().scrollToCaret(ScrollType.CENTER);
+        // 选中键名本体（跳过起始引号），视觉聚焦
+        final int nameStart = offset + 1;
+        editor.getSelectionModel().setSelection(nameStart, nameStart + lastKey.length());
+    }
+
+    /**
+     * 提取 JSONPath 最后一段键名（去掉数组索引）。
+     * <p>包级可见供单元测试。</p>
+     *
+     * @param jsonPath 路径
+     * @return 键名；根路径返回空串
+     */
+    static String extractLastKey(final String jsonPath) {
+        if (StrUtil.isBlank(jsonPath) || "$".equals(jsonPath)) {
+            return "";
+        }
+        final int dot = jsonPath.lastIndexOf('.');
+        final String last = dot >= 0 ? jsonPath.substring(dot + 1) : jsonPath;
+        final int bracket = last.indexOf('[');
+        return bracket >= 0 ? last.substring(0, bracket) : last;
+    }
+
+    /**
+     * 在 JSON 文本中定位键名首次出现的位置（引号感知，后跟冒号才视为键）。
+     * <p>包级可见供单元测试。</p>
+     *
+     * @param json JSON 文本
+     * @param key  键名
+     * @return 键名起始偏移；未找到返回 -1
+     */
+    static int findKeyOffset(final String json, final String key) {
+        if (StrUtil.isBlank(json) || StrUtil.isBlank(key)) {
+            return -1;
+        }
+        final String target = "\"%s\"".formatted(key);
+        boolean inString = false;
+        for (int i = 0; i <= json.length() - target.length(); i++) {
+            final char c = json.charAt(i);
+            // 键名匹配检查优先于字符串开关（target 以引号开头，避免被 continue 跳过）
+            if (!inString && json.startsWith(target, i)) {
+                int j = i + target.length();
+                while (j < json.length() && Character.isWhitespace(json.charAt(j))) {
+                    j++;
+                }
+                if (j < json.length() && json.charAt(j) == ':') {
+                    return i;
+                }
+            }
+            if (c == '"' && !inString) {
+                inString = true;
+                continue;
+            }
+            if (c == '"' && inString) {
+                inString = false;
+            }
+        }
+        return -1;
     }
 
     @Override

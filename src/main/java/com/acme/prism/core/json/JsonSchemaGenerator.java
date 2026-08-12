@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * JSON Schema 生成器：从样例 JSON 推断 JSON Schema（Draft 7），
+ * JSON Schema 生成器：从样例 JSON 推断 JSON Schema（最新标准 2020-12），
  * 类型推断覆盖 object / array / string / number / integer / boolean / null，
  * 样例中存在的键全部标记为 required。
  *
@@ -20,12 +20,12 @@ import java.util.Objects;
 public final class JsonSchemaGenerator implements JsonOperation {
 
     /**
-     * JSON Schema Draft 7 标识
+     * JSON Schema 最新标准（2020-12）标识
      */
-    private static final String DRAFT_7 = "http://json-schema.org/draft-07/schema#";
+    private static final String DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
 
     /**
-     * JSON 操作契约：推断 Draft 7 Schema。
+     * JSON 操作契约：推断最新标准（2020-12）Schema。
      *
      * @param json 输入
      * @return JSON Schema 文本；输入非法时原样返回
@@ -37,7 +37,7 @@ public final class JsonSchemaGenerator implements JsonOperation {
         }
         try {
             final JSONObject schema = new JSONObject();
-            schema.put("$schema", DRAFT_7);
+            schema.put("$schema", DRAFT_2020_12);
             schema.putAll(buildSchema(JSON.parse(json)));
             return JSON.toJSONString(schema, JSONWriter.Feature.PrettyFormat).trim();
         } catch (final Exception ignored) {

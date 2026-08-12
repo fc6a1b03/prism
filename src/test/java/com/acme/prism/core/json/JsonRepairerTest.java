@@ -170,6 +170,78 @@ class JsonRepairerTest {
     }
 
     @Test
+    @DisplayName("正常：Markdown 代码块被剥离")
+    void stripsFencedCodeBlock() {
+        final RepairResult result = JsonRepairer.repair("```json\n{\"a\":1}\n```");
+        assertNotNull(result);
+        assertEquals("{\"a\":1}", result.json());
+        assertTrue(result.fixes().contains(FixType.FENCE));
+    }
+
+    @Test
+    @DisplayName("正常：日志前缀被剥离")
+    void stripsLogPrefix() {
+        final RepairResult result = JsonRepairer.repair("INFO: {\"a\":1}");
+        assertNotNull(result);
+        assertEquals("{\"a\":1}", result.json());
+        assertTrue(result.fixes().contains(FixType.LOG_PREFIX));
+    }
+
+    @Test
+    @DisplayName("正常：特殊引号转标准引号")
+    void convertsSpecialQuotes() {
+        final RepairResult result = JsonRepairer.repair("{\"a\":\u201Ctext\u201D}");
+        assertNotNull(result);
+        assertEquals("{\"a\":\"text\"}", result.json());
+        assertTrue(result.fixes().contains(FixType.SPECIAL_QUOTE));
+    }
+
+    @Test
+    @DisplayName("正常：值间缺失逗号被补齐（数字后键）")
+    void addsCommaBetweenValueAndKey() {
+        final RepairResult result = JsonRepairer.repair("{\"a\":1 \"b\":2}");
+        assertNotNull(result);
+        assertTrue(result.json().contains("\"a\":1,") && result.json().contains("\"b\":2"), "逗号应补在值间");
+        assertTrue(result.fixes().contains(FixType.MISSING_COMMA));
+    }
+
+    @Test
+    @DisplayName("正常：值间缺失逗号被补齐（字符串值后键）")
+    void addsCommaBetweenStringValueAndKey() {
+        final RepairResult result = JsonRepairer.repair("{\"a\":\"x\" \"b\":1}");
+        assertNotNull(result);
+        assertTrue(result.json().contains("\"a\":\"x\",") && result.json().contains("\"b\":1"), "逗号应补在字符串值与键之间");
+        assertTrue(result.fixes().contains(FixType.MISSING_COMMA));
+    }
+
+    @Test
+    @DisplayName("正常：数组元素间缺失逗号被补齐（连续多缺）")
+    void addsCommaBetweenArrayElements() {
+        final RepairResult result = JsonRepairer.repair("[1 2 3]");
+        assertNotNull(result);
+        assertTrue(result.json().contains("[1,") && result.json().contains("2,") && result.json().contains("3]"), "连续缺逗号应全部补齐");
+        assertTrue(result.fixes().contains(FixType.MISSING_COMMA));
+    }
+
+    @Test
+    @DisplayName("正常：截断 JSON 补齐缺失闭合括号")
+    void closesTruncatedJson() {
+        final RepairResult result = JsonRepairer.repair("{\"a\":1");
+        assertNotNull(result);
+        assertEquals("{\"a\":1}", result.json());
+        assertTrue(result.fixes().contains(FixType.MISSING_BRACKET));
+    }
+
+    @Test
+    @DisplayName("正常：截断嵌套 JSON 按序补齐括号")
+    void closesNestedTruncatedJson() {
+        final RepairResult result = JsonRepairer.repair("{\"a\":{\"b\":[1,2]");
+        assertNotNull(result);
+        assertEquals("{\"a\":{\"b\":[1,2]}}", result.json());
+        assertTrue(result.fixes().contains(FixType.MISSING_BRACKET));
+    }
+
+    @Test
     @DisplayName("回归：多修复点去重后列表唯一")
     void deduplicatesFixTypes() {
         final RepairResult result = JsonRepairer.repair("{a:1, b:2,}");

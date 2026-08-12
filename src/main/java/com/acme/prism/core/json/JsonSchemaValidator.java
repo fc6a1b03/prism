@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 /**
- * JSON Schema 校验器：按 JSON Schema（Draft 7 常用关键字）逐字段校验 JSON 数据。
+ * JSON Schema 校验器：按 JSON Schema（2020-12 常用关键字）逐字段校验 JSON 数据。
  *
  * <p>支持关键字：type（含多类型数组）、required、properties、items、enum、minLength/maxLength、
  * minimum/maximum、pattern、format（email/date-time/date/time/uri/uuid/ipv4/ipv6）、
@@ -125,13 +125,27 @@ public final class JsonSchemaValidator {
             issues.add(new ValidationIssue(path, "类型 " + type, actualType(value), "类型不匹配"));
             return;
         }
-        // 2. 枚举校验
+        // 2. 枚举与常量校验
         final JSONArray enumValues = schemaNode.getJSONArray("enum");
         if (Objects.nonNull(enumValues) && !enumValues.contains(value)) {
             issues.add(new ValidationIssue(path, "枚举值之一", String.valueOf(value), "不在枚举范围内"));
         }
-        // 3. 组合约束校验（oneOf 恰好一个 / anyOf 至少一个 / allOf 全部满足）
+        final Object constValue = schemaNode.get("const");
+        if (Objects.nonNull(constValue)) {
+            // 数值按数值比较（2020-12 语义：1 与 1.0 相等），其余按 JSON 值比较
+            final boolean constMatches = constValue instanceof final Number constNum && value instanceof final Number valueNum
+                    ? BigDecimal.valueOf(constNum.doubleValue()).compareTo(BigDecimal.valueOf(valueNum.doubleValue())) == 0
+                    : JSON.toJSONString(constValue).equals(JSON.toJSONString(value));
+            if (!constMatches) {
+                issues.add(new ValidationIssue(path, "等于 " + JSON.toJSONString(constValue), String.valueOf(value), "const 约束不满足"));
+            }
+        }
+        // 3. 组合约束校验（oneOf 恰好一个 / anyOf 至少一个 / allOf 全部满足 / not 否定）
         validateCombinators(value, schemaNode, path, issues);
+        final Object notSchema = schemaNode.get("not");
+        if (notSchema instanceof final JSONObject notObj && checkMatches(value, notObj, path)) {
+            issues.add(new ValidationIssue(path, "不匹配否定约束", String.valueOf(value), "not 约束不满足"));
+        }
         // 4. 字符串约束
         if (value instanceof final String text) {
             validateString(text, schemaNode, path, issues);
@@ -140,11 +154,11 @@ public final class JsonSchemaValidator {
         if (value instanceof final Number number) {
             validateNumber(number, schemaNode, path, issues);
         }
-        // 6. 对象：必填字段 + 属性数量 + 子属性递归
+        // 6. 对象：必填字段 + 属性数量 + 动态键名 + 未知字段 + 子属性递归
         if (value instanceof final JSONObject obj) {
             validateObject(obj, schemaNode, path, issues, checked);
         }
-        // 7. 数组：长度约束 + 元素唯一 + 元素递归
+        // 7. 数组：长度约束 + 元素唯一 + 元组校验 + 元素递归
         if (value instanceof final JSONArray arr) {
             validateArray(arr, schemaNode, path, issues, checked);
         }
@@ -185,7 +199,7 @@ public final class JsonSchemaValidator {
     }
 
     /**
-     * 校验字符串格式约束（未知 format 不拦截，符合 Draft 7 语义）。
+     * 校验字符串格式约束（未知 format 不拦截，符合 2020-12 语义）。
      *
      * @param text   字符串
      * @param format 格式名
@@ -312,13 +326,78 @@ public final class JsonSchemaValidator {
             }
         }
         final JSONObject properties = schemaNode.getJSONObject("properties");
-        if (Objects.isNull(properties)) {
-            return;
-        }
-        for (final String key : properties.keySet()) {
-            if (obj.containsKey(key) && properties.get(key) instanceof final JSONObject childSchema) {
-                validateValue(obj.get(key), childSchema, "%s.%s".formatted(path, key), issues, checked);
+        if (Objects.nonNull(properties)) {
+            for (final String key : properties.keySet()) {
+                if (obj.containsKey(key) && properties.get(key) instanceof final JSONObject childSchema) {
+                    validateValue(obj.get(key), childSchema, "%s.%s".formatted(path, key), issues, checked);
+                }
             }
+        }
+        // patternProperties：动态键名校验（键匹配正则 → 对应子 schema）
+        final JSONObject patternProperties = schemaNode.getJSONObject("patternProperties");
+        if (Objects.nonNull(patternProperties)) {
+            for (final String pattern : patternProperties.keySet()) {
+                final Pattern compiled = compilePattern(pattern);
+                if (Objects.isNull(compiled)) {
+                    continue;
+                }
+                final Object childSchema = patternProperties.get(pattern);
+                if (childSchema instanceof final JSONObject sub) {
+                    for (final String key : obj.keySet()) {
+                        if (compiled.matcher(key).matches()) {
+                            validateValue(obj.get(key), sub, "%s.%s".formatted(path, key), issues, checked);
+                        }
+                    }
+                }
+            }
+        }
+        // additionalProperties：false 拒绝未知字段；schema 形式对未知字段按子 schema 校验
+        final Object additionalProperties = schemaNode.get("additionalProperties");
+        if (Objects.nonNull(additionalProperties)) {
+            final Set<String> known = new HashSet<>();
+            if (Objects.nonNull(properties)) {
+                known.addAll(properties.keySet());
+            }
+            if (Objects.nonNull(patternProperties)) {
+                for (final String pattern : patternProperties.keySet()) {
+                    final Pattern compiled = compilePattern(pattern);
+                    if (Objects.isNull(compiled)) {
+                        continue;
+                    }
+                    for (final String key : obj.keySet()) {
+                        if (compiled.matcher(key).matches()) {
+                            known.add(key);
+                        }
+                    }
+                }
+            }
+            if (additionalProperties instanceof final JSONObject additionalSchema) {
+                for (final String key : obj.keySet()) {
+                    if (!known.contains(key)) {
+                        validateValue(obj.get(key), additionalSchema, "%s.%s".formatted(path, key), issues, checked);
+                    }
+                }
+            } else if (Boolean.FALSE.equals(additionalProperties)) {
+                for (final String key : obj.keySet()) {
+                    if (!known.contains(key)) {
+                        issues.add(new ValidationIssue(path, "未声明字段", key, "additionalProperties 禁止未知字段"));
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 编译 Schema 中的正则（非法正则返回 null，不中断校验）。
+     *
+     * @param pattern 正则文本
+     * @return 编译后的正则；非法时返回 {@code null}
+     */
+    private static Pattern compilePattern(final String pattern) {
+        try {
+            return Pattern.compile(pattern);
+        } catch (final PatternSyntaxException ignored) {
+            return null;
         }
     }
 
@@ -346,8 +425,20 @@ public final class JsonSchemaValidator {
             issues.add(new ValidationIssue(path, "元素唯一", String.valueOf(arr.size()) + " 个元素", "数组存在重复元素"));
         }
         final Object items = schemaNode.get("items");
+        // prefixItems：2020-12 元组校验（前 N 个位置对应子 schema）
+        final JSONArray prefixItems = schemaNode.getJSONArray("prefixItems");
+        if (Objects.nonNull(prefixItems)) {
+            for (int index = 0; index < Math.min(arr.size(), prefixItems.size()); index++) {
+                final Object itemSchema = prefixItems.get(index);
+                if (itemSchema instanceof final JSONObject sub) {
+                    validateValue(arr.get(index), sub, "%s[%d]".formatted(path, index), issues, checked);
+                }
+            }
+        }
+        // items：其余元素按元素 schema 校验
         if (items instanceof final JSONObject itemSchema) {
-            for (int index = 0; index < arr.size(); index++) {
+            final int start = Objects.nonNull(prefixItems) ? prefixItems.size() : 0;
+            for (int index = start; index < arr.size(); index++) {
                 validateValue(arr.get(index), itemSchema, "%s[%d]".formatted(path, index), issues, checked);
             }
         }
@@ -402,21 +493,31 @@ public final class JsonSchemaValidator {
     /**
      * 统计值与子约束列表匹配的数量（独立校验，不污染主失败项与计数）。
      *
-     * @param value      实际值
-     * @param schemas    子约束列表
-     * @param path       路径
+     * @param value   实际值
+     * @param schemas 子约束列表
+     * @param path    路径
      * @return 匹配数量
      */
     private static long countMatches(final Object value, final JSONArray schemas, final String path) {
         return schemas.stream()
                 .filter(JSONObject.class::isInstance)
                 .map(JSONObject.class::cast)
-                .filter(subSchema -> {
-                    final List<ValidationIssue> temp = new ArrayList<>();
-                    validateValue(value, subSchema, path, temp, new AtomicInteger());
-                    return temp.isEmpty();
-                })
+                .filter(subSchema -> checkMatches(value, subSchema, path))
                 .count();
+    }
+
+    /**
+     * 值是否匹配单个子约束（独立校验，不污染主失败项与计数）。
+     *
+     * @param value  实际值
+     * @param schema 子约束
+     * @param path   路径
+     * @return 是否匹配
+     */
+    private static boolean checkMatches(final Object value, final JSONObject schema, final String path) {
+        final List<ValidationIssue> temp = new ArrayList<>();
+        validateValue(value, schema, path, temp, new AtomicInteger());
+        return temp.isEmpty();
     }
 
     /**

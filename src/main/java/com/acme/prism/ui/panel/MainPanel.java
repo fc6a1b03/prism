@@ -320,7 +320,10 @@ public class MainPanel {
     private void showAnalyzeDialog(final EditorTextField editor) {
         if (Objects.isNull(editor) || Objects.isNull(editor.getProject())) return;
         final String text = editor.getText();
-        if (StrUtil.isBlank(text)) return;
+        if (StrUtil.isBlank(text)) {
+            Notifier.notifyWarn(BUNDLE.getString("json.tool.empty.editor"), editor.getProject());
+            return;
+        }
         ApplicationManager.getApplication().invokeLater(() -> new JsonAnalyzeDialog(editor.getProject(), text).show());
     }
 
@@ -332,7 +335,10 @@ public class MainPanel {
     private void showValidateDialog(final EditorTextField editor) {
         if (Objects.isNull(editor) || Objects.isNull(editor.getProject())) return;
         final String text = editor.getText();
-        if (StrUtil.isBlank(text)) return;
+        if (StrUtil.isBlank(text)) {
+            Notifier.notifyWarn(BUNDLE.getString("json.tool.empty.editor"), editor.getProject());
+            return;
+        }
         ApplicationManager.getApplication().invokeLater(() -> new JsonValidateDialog(editor.getProject(), text).show());
     }
 

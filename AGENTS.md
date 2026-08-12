@@ -22,7 +22,7 @@
 
 - JSON 编辑、格式化、压缩、转义与反转义
 - 自动修复损坏 JSON（单引号/缺逗号/尾逗号/注释/JSONP 包装/裸键/非标准字面量），带置信度与修复日志
-- 按键递归排序、扁平化/还原（点号键与嵌套结构互转）、JSON Schema（Draft 7）生成
+- 按键递归排序、扁平化/还原（点号键与嵌套结构互转）、JSON Schema（2020-12）生成
 - 右侧面板深度工具：工具条（修复/排序/展开/还原/Schema/分析）、结构分析（键/对象/数组/深度/大小、重复键检测）、树形面板展开全部/折叠全部与选中节点路径/值详情
 - 从 JSON 生成 Java Class / Record
 - 从 Java 类字段复制 JSON 结构
@@ -111,7 +111,7 @@ src/main/
 │   │   │   ├── JsonFlattener.java       # JSON 扁平化（点号键展开）
 │   │   │   ├── JsonFormatter.java       # JSON 格式化
 │   │   │   ├── JsonRepairer.java        # JSON 修复（损坏 JSON 自动修复，带置信度）
-│   │   │   ├── JsonSchemaGenerator.java # JSON Schema (Draft 7) 生成
+│   │   │   ├── JsonSchemaGenerator.java # JSON Schema (2020-12) 生成
 │   │   │   ├── JsonSearchEngine.java    # JSON 搜索引擎 (JsonPath/JMESPath)
 │   │   │   ├── JsonSorter.java          # JSON 键递归排序
 │   │   │   ├── JsonUnEscaper.java       # JSON 反转义
