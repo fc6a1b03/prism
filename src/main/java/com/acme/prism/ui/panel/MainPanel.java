@@ -2,11 +2,13 @@ package com.acme.prism.ui.panel;
 
 import cn.hutool.core.util.StrUtil;
 import com.acme.prism.common.Clipboard;
+import com.acme.prism.core.crypto.AesDecryptor;
 import com.acme.prism.core.json.*;
 import com.acme.prism.core.notice.Notifier;
 import com.acme.prism.core.parser.AnyParser;
 import com.acme.prism.core.parser.JwtParser;
 import com.acme.prism.core.parser.PathParser;
+import com.acme.prism.core.settings.PluginSettings;
 import com.acme.prism.ui.dialog.ConvertAnyDialog;
 import com.acme.prism.ui.dialog.JsonAnalyzeDialog;
 import com.acme.prism.ui.dialog.JsonValidateDialog;
@@ -204,6 +206,8 @@ public class MainPanel {
         panel.add(this.createToolButton(BUNDLE.getString("json.mock.generate"), AllIcons.Actions.Rerun,
                 _ -> this.optJson(redoButton, undoButton, editor.getEditor(), new JsonMockGenerator())));
         panel.add(this.createKeyCaseButton(redoButton, undoButton, editor));
+        panel.add(this.createToolButton(BUNDLE.getString("json.decrypt"), AllIcons.Nodes.SecurityRole,
+                _ -> this.decryptJson(redoButton, undoButton, editor)));
         panel.add(this.createToolButton(BUNDLE.getString("json.validate"), AllIcons.General.GreenCheckmark,
                 _ -> this.showValidateDialog(editor)));
         panel.add(this.createToolButton(BUNDLE.getString("json.analyze"), AllIcons.Actions.Find,
@@ -307,6 +311,53 @@ public class MainPanel {
                         Notifier.notifyWarn("%s %s".formatted(summary, BUNDLE.getString("json.repair.low.confidence")), editor.getProject());
                     } else {
                         Notifier.notifyInfo(summary, editor.getProject());
+                    }
+                }))
+                .exceptionally(error -> {
+                    Notifier.notifyError(error.getMessage(), editor.getProject());
+                    return null;
+                });
+    }
+
+    /**
+     * 解密 JSON：编辑器内容作为 Base64 密文，用设置中的 AES 密钥解密后格式化写回
+     * （非 JSON 明文原样写回）。密钥未配置时提示去设置页填写。
+     *
+     * @param redoButton 重做按钮
+     * @param undoButton 撤消按钮
+     * @param editor     当前编辑
+     */
+    private void decryptJson(final JButton redoButton, final JButton undoButton, final EditorTextField editor) {
+        if (Objects.isNull(editor) || Objects.isNull(editor.getProject())) return;
+        final Document document = editor.getDocument();
+        final String snapshot = document.getText();
+        if (StrUtil.isBlank(snapshot)) return;
+        // 密钥来自插件设置（用户自行配置，避免密钥入库）；未配置时提示
+        final String key = PluginSettings.of().aesKey;
+        if (StrUtil.isBlank(key)) {
+            Notifier.notifyWarn(BUNDLE.getString("json.decrypt.key.empty"), editor.getProject());
+            return;
+        }
+        CompletableFuture
+                .supplyAsync(() -> AesDecryptor.decrypt(snapshot, key), AppExecutorUtil.getAppExecutorService())
+                .thenAccept(plain -> ApplicationManager.getApplication().invokeLater(() -> {
+                    if (Objects.isNull(plain)) {
+                        Notifier.notifyError(BUNDLE.getString("json.decrypt.failed"), editor.getProject());
+                        return;
+                    }
+                    if (!snapshot.equals(document.getText())) {
+                        return;
+                    }
+                    // 解密结果是合法 JSON 则格式化（树面板可浏览），否则原样写回明文
+                    final boolean isJson = JSON.isValid(plain);
+                    final String result = isJson ? new JsonFormatter().process(plain) : plain;
+                    WriteCommandAction.runWriteCommandAction(editor.getProject(), () -> {
+                        this.pushHistory(this.undoStack, snapshot);
+                        document.setText(result);
+                        this.updateButtons(undoButton, redoButton);
+                    });
+                    if (!isJson) {
+                        Notifier.notifyWarn(BUNDLE.getString("json.decrypt.non.json"), editor.getProject());
                     }
                 }))
                 .exceptionally(error -> {

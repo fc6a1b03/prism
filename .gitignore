@@ -38,5 +38,8 @@ bin/
 ### VS Code ###
 .vscode/
 
+### 本地测试密文（敏感数据，禁止入库） ###
+doc/测试密文.txt
+
 ### Mac OS ###
 .DS_Store

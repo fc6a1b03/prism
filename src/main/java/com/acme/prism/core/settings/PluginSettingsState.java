@@ -48,6 +48,8 @@ public class PluginSettingsState implements PersistentStateComponent<PluginSetti
     public boolean minimapErrorStripeEnabled = Boolean.TRUE;
     /** 代码地图启用时隐藏编辑器原始滚动条（默认隐藏；关闭后恢复 AS_NEEDED） */
     public boolean minimapHideOriginalScrollBar = Boolean.TRUE;
+    /** 密文解密 AES 密钥（默认空，用户按需在设置中填写；UTF-8 编码后须为 16/24/32 字节） */
+    public String aesKey = "";
 
     @NotNull
     public static PluginSettingsState getInstance() {

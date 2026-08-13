@@ -73,6 +73,13 @@ intellijPlatform {
         version = project.version.toString()
         // sinceBuild 自 IGP 2.14 起默认取目标平台 major build（2026.2 → 262），无需显式声明
         changeNotes = """
+            <b>0.23.0</b>
+            <ul>
+                <li>新增 AES 密文解密：AesDecryptor（AES-256-CBC，IV 与密钥同源取前 16 字节，PKCS7 填充），工具条新增解密按钮，密文解密后格式化写回编辑器（非 JSON 明文原样写回并提示）。</li>
+                <li>兼容超长填充：部分密文尾部填充值超过块大小（如 21 字节 0x15），CryptoJS 宽松剥离而 JDK 严格模式拒绝，严格失败后回退 NoPadding 手动剥离（尾部字节一致性校验防误剥）。</li>
+                <li>密钥配置进插件全局设置（application 级，配一次所有项目通用）：设置页新增解密区（密钥输入框 + 全局配置提示），未配置密钥时解密按钮提示先配置。</li>
+                <li>新增 8 个单元测试（总 557 全绿），i18n 182 键双文件一致。</li>
+            </ul>
             <b>0.22.0</b>
             <ul>
                 <li>JSON 修复扩展：MongoDB 扩展 JSON 包装剥离（NumberLong/NumberInt/Timestamp/new Date/ISODate/ObjectId/UUID/NumberDecimal/BinData，MinKey/MaxKey 转 null），新增 FixType.MONGODB 与修复日志；骨架层正则含词边界加固，字符串值内文本零误伤。</li>

@@ -85,6 +85,8 @@ src/main/
 │   │   ├── TemporalTypeHandler.java     # 时间类型处理
 │   │   └── UastSupported.java     # UAST (Universal AST) 支持
 │   ├── core/                      # 核心功能模块
+│   │   ├── crypto/                # 加密解密
+│   │   │   └── AesDecryptor.java  # AES-256-CBC 密文解密（密文 → JSON）
 │   │   ├── archive/               # 压缩包格式识别、索引、树节点、搜索、打开器、图标
 │   │   │   ├── ArchiveFormats.java      # 压缩包格式枚举与条目读取
 │   │   │   ├── ArchiveIndex.java        # 压缩包索引
