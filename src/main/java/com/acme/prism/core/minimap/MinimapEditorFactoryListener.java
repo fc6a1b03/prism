@@ -12,6 +12,8 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.HierarchyEvent;
+import java.awt.event.HierarchyListener;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -40,6 +42,11 @@ public final class MinimapEditorFactoryListener implements EditorFactoryListener
         if (Objects.isNull(project) || !PluginSettingsState.getInstance().minimapEnabled) {
             return;
         }
+        // 弹窗（校验/转换对话框）内编辑器不挂 minimap：高度受限且无导航价值；
+        // 创建时组件可能尚未挂入窗口，漏判场景由 createPanel 的 EDT 事件裁决兜底移除
+        if (isInDialog(editor)) {
+            return;
+        }
         PANELS.computeIfAbsent(editor, e -> createPanel(e, project));
     }
 
@@ -56,7 +63,8 @@ public final class MinimapEditorFactoryListener implements EditorFactoryListener
         final var enabled = PluginSettingsState.getInstance().minimapEnabled;
         for (final var editor : com.intellij.openapi.editor.EditorFactory.getInstance().getAllEditors()) {
             final var project = editor.getProject();
-            if (Objects.isNull(project)) {
+            // 弹窗内编辑器跳过：不补挂 minimap（Prism 工具窗口主编辑器属主窗口，不受影响）
+            if (Objects.isNull(project) || isInDialog(editor)) {
                 continue;
             }
             if (enabled) {
@@ -73,10 +81,23 @@ public final class MinimapEditorFactoryListener implements EditorFactoryListener
     public static void syncScrollBarVisibility() {
         final var hide = PluginSettingsState.getInstance().minimapHideOriginalScrollBar;
         for (final var editor : com.intellij.openapi.editor.EditorFactory.getInstance().getAllEditors()) {
-            if (Objects.nonNull(editor.getProject())) {
+            // 弹窗内编辑器无 minimap，不隐藏其滚动条
+            if (Objects.nonNull(editor.getProject()) && !isInDialog(editor)) {
                 applyScrollBarVisibility(editor, hide);
             }
         }
+    }
+
+    /**
+     * 编辑器是否位于弹窗（{@link Dialog}）内，如校验/转换对话框的 EditorTextField。
+     * <p>按顶层窗口类型判定：弹窗顶层为 JDialog，Prism 工具窗口与 IDE 编辑区顶层为
+     * 主窗口（JFrame），可精确区分。弹窗编辑器不挂 minimap、不隐藏其原始滚动条。</p>
+     *
+     * @param editor 编辑器
+     * @return 是否位于弹窗内
+     */
+    private static boolean isInDialog(@NotNull final Editor editor) {
+        return SwingUtilities.getWindowAncestor(editor.getComponent()) instanceof Dialog;
     }
 
     /**
@@ -140,12 +161,38 @@ public final class MinimapEditorFactoryListener implements EditorFactoryListener
         panelRef.set(panel);
         editor.getComponent().add(panel, BorderLayout.LINE_END);
         applyScrollBarVisibility(editor, PluginSettingsState.getInstance().minimapHideOriginalScrollBar);
-        // EditorTextField（Prism 面板）、diff 视图等在 editorCreated 之后才完成自身滚动条配置
-        //（策略与尺寸初始化会覆盖宽度归零），EDT 队尾补应用一次，保证默认隐藏不依赖创建时机
+        // ① EditorTextField（Prism 面板）、diff 视图等在 editorCreated 之后才完成自身滚动条配置
+        //（策略与尺寸初始化会覆盖宽度归零），EDT 队尾补应用一次，保证默认隐藏不依赖创建时机；
+        // ② 弹窗编辑器在 editorCreated 时组件可能尚未挂入窗口（isInDialog 漏判），已挂载 minimap——
+        // 组件未显示时挂 SHOWING_CHANGED 监听，窗口显示瞬间裁决：在弹窗内则移除 minimap（含恢复滚动条）
         SwingUtilities.invokeLater(() -> {
-            if (!editor.isDisposed() && PANELS.containsKey(editor)) {
-                applyScrollBarVisibility(editor, PluginSettingsState.getInstance().minimapHideOriginalScrollBar);
+            if (editor.isDisposed() || !PANELS.containsKey(editor)) {
+                return;
             }
+            if (editor.getComponent().isShowing()) {
+                if (isInDialog(editor)) {
+                    removePanel(editor);
+                } else {
+                    applyScrollBarVisibility(editor, PluginSettingsState.getInstance().minimapHideOriginalScrollBar);
+                }
+                return;
+            }
+            editor.getComponent().addHierarchyListener(new HierarchyListener() {
+                @Override
+                public void hierarchyChanged(final HierarchyEvent e) {
+                    if ((e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) != 0
+                            && editor.getComponent().isShowing()
+                            && !editor.isDisposed()
+                            && PANELS.containsKey(editor)) {
+                        if (isInDialog(editor)) {
+                            removePanel(editor);
+                        } else {
+                            applyScrollBarVisibility(editor, PluginSettingsState.getInstance().minimapHideOriginalScrollBar);
+                        }
+                        editor.getComponent().removeHierarchyListener(this);
+                    }
+                }
+            });
         });
         return panel;
     }
