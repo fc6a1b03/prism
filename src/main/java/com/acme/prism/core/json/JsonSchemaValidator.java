@@ -27,7 +27,7 @@ import java.util.regex.PatternSyntaxException;
  *
  * <p>支持关键字：type（含多类型数组）、required、properties、items、enum、minLength/maxLength、
  * minimum/maximum、pattern、format（email/date-time/date/time/uri/uuid/ipv4/ipv6）、
- * oneOf/anyOf/allOf、minItems/maxItems/uniqueItems、minProperties/maxProperties、
+ * oneOf/anyOf/allOf/not、if/then/else、minItems/maxItems/uniqueItems、minProperties/maxProperties、
  * exclusiveMinimum/exclusiveMaximum、multipleOf。输出每个失败项（路径/期望/实际/说明）
  * 与已校验字段总数。</p>
  *
@@ -146,6 +146,8 @@ public final class JsonSchemaValidator {
         if (notSchema instanceof final JSONObject notObj && checkMatches(value, notObj, path)) {
             issues.add(new ValidationIssue(path, "不匹配否定约束", String.valueOf(value), "not 约束不满足"));
         }
+        // 3.5 条件约束校验（if/then/else，2020-12 语义）
+        validateConditionals(value, schemaNode, path, issues);
         // 4. 字符串约束
         if (value instanceof final String text) {
             validateString(text, schemaNode, path, issues);
@@ -161,6 +163,31 @@ public final class JsonSchemaValidator {
         // 7. 数组：长度约束 + 元素唯一 + 元组校验 + 元素递归
         if (value instanceof final JSONArray arr) {
             validateArray(arr, schemaNode, path, issues, checked);
+        }
+    }
+
+    /**
+     * 校验条件约束（if/then/else，2020-12 语义）。
+     * <p>{@code if} 子 schema 匹配时应用 {@code then}，否则应用 {@code else}；
+     * 无 {@code if} 时 {@code then}/{@code else} 被忽略（标准语义）。
+     * 分支校验独立计数（不污染主计数），失败项并入主列表。</p>
+     *
+     * @param value      实际值
+     * @param schemaNode Schema 节点
+     * @param path       路径
+     * @param issues     失败项收集器
+     */
+    private static void validateConditionals(final Object value, final JSONObject schemaNode, final String path,
+                                             final List<ValidationIssue> issues) {
+        final Object ifSchema = schemaNode.get("if");
+        if (ifSchema instanceof final JSONObject ifObj) {
+            if (checkMatches(value, ifObj, path)) {
+                if (schemaNode.get("then") instanceof final JSONObject thenObj) {
+                    validateValue(value, thenObj, path, issues, new AtomicInteger());
+                }
+            } else if (schemaNode.get("else") instanceof final JSONObject elseObj) {
+                validateValue(value, elseObj, path, issues, new AtomicInteger());
+            }
         }
     }
 

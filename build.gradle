@@ -73,6 +73,13 @@ intellijPlatform {
         version = project.version.toString()
         // sinceBuild 自 IGP 2.14 起默认取目标平台 major build（2026.2 → 262），无需显式声明
         changeNotes = """
+            <b>0.21.0</b>
+            <ul>
+                <li>新增键名风格转换：JsonKeyConverter 递归转换对象键（camelCase/snake_case/PascalCase/kebab-case 两两互转），分词处理大小写边界、连续大写缩略词（HTTPServer→http_server）、字母数字边界（user2name→user_2_name）；null 值字段保留（与排序器惯例一致）；转换后键名冲突后者覆盖（JSON 重复键固有限制，类 Javadoc 明示）；工具条新增转换按钮（四种风格弹出菜单）。</li>
+                <li>JSON 修复扩展：NDJSON 流检测组装（整体非法但每行均为合法 JSON 且 ≥2 行时组装为数组，任一行非法即放弃走常规管道），新增 FixType.NDJSON 与修复日志。</li>
+                <li>Schema 校验器补全 if/then/else 条件关键字（2020-12 语义：if 匹配应用 then 否则 else，无 if 时忽略，分支独立校验不污染主失败项与计数）。</li>
+                <li>新增 24 个单元测试（总 525 全绿），i18n 173 键双文件一致。</li>
+            </ul>
             <b>0.20.9</b>
             <ul>
                 <li>JSON Schema 升级最新标准 2020-12：生成器 \$schema 标识更新，Draft 7 文案残留清零（文档/i18n/注释）。</li>

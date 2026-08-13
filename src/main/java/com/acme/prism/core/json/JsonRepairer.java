@@ -16,8 +16,9 @@ import java.util.regex.Pattern;
  * JSON 修复器：自动修复损坏的 JSON（单引号、缺逗号、尾逗号、注释、JSONP 包装、
  * 未加引号的键、非标准字面量等），输出修复后的 JSON、修复点日志与置信度。
  *
- * <p>修复采用分层管道：BOM 剥离 → JSONP 剥离 → 单引号规范化 → 裸键补引号 →
- * 注释剥离 → 字符串提取保护 → 骨架修复（逗号/字面量）→ 字符串还原 → 合法性验证。
+ * <p>修复采用分层管道：BOM 剥离 → NDJSON 检测组装 → Markdown 代码块剥离 → JSONP 剥离 →
+ * 日志前缀剥离 → 特殊引号规范化 → 单引号转双引号 → 裸键补引号 → 注释剥离 →
+ * 字符串提取保护 → 骨架修复（逗号/字面量/闭合括号）→ 字符串还原 → 合法性验证。
  * 字符串内容在修复期间被占位符保护，避免正则误伤值内容。</p>
  *
  * @author 拒绝者
@@ -68,6 +69,22 @@ public final class JsonRepairer implements JsonOperation {
      * 非标准字面量模式
      */
     private static final Pattern LITERAL = Pattern.compile("\\b(undefined|None|True|False|NaN|Infinity)\\b");
+    /**
+     * NDJSON 组装缩进前缀
+     */
+    private static final String NDJSON_INDENT = "\n  ";
+    /**
+     * NDJSON 数组闭合行
+     */
+    private static final String NDJSON_CLOSE = "\n]";
+    /**
+     * NDJSON 数组元素分隔（逗号 + 缩进）
+     */
+    private static final String NDJSON_SEPARATOR = ",\n  ";
+    /**
+     * NDJSON 数组开括号
+     */
+    private static final String NDJSON_OPEN = "[";
 
     /**
      * 修复类型与对应置信度扣减值、i18n 键。
@@ -120,7 +137,11 @@ public final class JsonRepairer implements JsonOperation {
         /**
          * 非标准字面量规范化
          */
-        LITERAL("json.repair.fix.literal", 0.05);
+        LITERAL("json.repair.fix.literal", 0.05),
+        /**
+         * NDJSON 流组装为 JSON 数组
+         */
+        NDJSON("json.repair.fix.ndjson", 0.10);
 
         /**
          * 修复类型 i18n 键
@@ -188,36 +209,44 @@ public final class JsonRepairer implements JsonOperation {
             text = text.substring(1);
             fixes.add(FixType.BOM);
         }
-        // 2. 剥离 Markdown 代码块（```json ... ```）
+        // 2. NDJSON 检测：整体非法但每行均为合法 JSON 时，组装为数组（短路返回）
+        if (!JSON.isValid(text)) {
+            final String ndjson = toNdjsonArray(text);
+            if (Objects.nonNull(ndjson)) {
+                fixes.add(FixType.NDJSON);
+                return new RepairResult(ndjson, fixes.stream().distinct().toList(), confidence(fixes));
+            }
+        }
+        // 3. 剥离 Markdown 代码块（```json ... ```）
         final String fenced = stripFencedCodeBlock(text);
         if (Objects.nonNull(fenced)) {
             text = fenced;
             fixes.add(FixType.FENCE);
         }
-        // 3. 剥离 JSONP 包装
+        // 4. 剥离 JSONP 包装
         final String stripped = stripJsonp(text);
         if (Objects.nonNull(stripped)) {
             text = stripped;
             fixes.add(FixType.JSONP);
         }
-        // 4. 剥离日志前缀（INFO: {...} / 时间戳前缀）
+        // 5. 剥离日志前缀（INFO: {...} / 时间戳前缀）
         final String logStripped = stripLogPrefix(text);
         if (Objects.nonNull(logStripped)) {
             text = logStripped;
             fixes.add(FixType.LOG_PREFIX);
         }
-        // 5. 特殊引号转标准引号（“ ” ‘ ’ → " '）
+        // 6. 特殊引号转标准引号（“ ” ‘ ’ → " '）
         text = normalizeSpecialQuotes(text, fixes);
-        // 6. 单引号转双引号（规范化后字符串统一为双引号）
+        // 7. 单引号转双引号（规范化后字符串统一为双引号）
         text = normalizeSingleQuotes(text, fixes);
-        // 7. 未加引号的键补引号
+        // 8. 未加引号的键补引号
         text = fixUnquotedKeys(text, fixes);
-        // 8. 剥离注释
+        // 9. 剥离注释
         text = stripComments(text, fixes);
-        // 9. 提取字符串为占位符，保护值内容
+        // 10. 提取字符串为占位符，保护值内容
         final StringExtraction extraction = extractStrings(text);
         String skeleton = extraction.skeleton();
-        // 10. 骨架修复（骨架无字符串内容，正则安全）
+        // 11. 骨架修复（骨架无字符串内容，正则安全）
         final String beforeTrailing = skeleton;
         skeleton = TRAILING_COMMA.matcher(skeleton).replaceAll("$1");
         if (!skeleton.equals(beforeTrailing)) {
@@ -245,15 +274,15 @@ public final class JsonRepairer implements JsonOperation {
         if (!skeleton.equals(beforeLiteral)) {
             fixes.add(FixType.LITERAL);
         }
-        // 11. 补齐缺失闭合括号（截断 JSON 场景）
+        // 12. 补齐缺失闭合括号（截断 JSON 场景）
         final String beforeBracket = skeleton;
         skeleton = closeBrackets(skeleton);
         if (!skeleton.equals(beforeBracket)) {
             fixes.add(FixType.MISSING_BRACKET);
         }
-        // 12. 还原字符串
+        // 13. 还原字符串
         final String restored = restoreStrings(skeleton, extraction.strings());
-        // 13. 合法性验证，失败不返回修复结果（绝不写回非法内容）
+        // 14. 合法性验证，失败不返回修复结果（绝不写回非法内容）
         if (!JSON.isValid(restored)) {
             return null;
         }
@@ -287,6 +316,38 @@ public final class JsonRepairer implements JsonOperation {
             value -= fix.penalty();
         }
         return Math.max(value, 0.1d);
+    }
+
+    /**
+     * NDJSON 流组装为 JSON 数组：整体非法但每行（非空白）均为合法 JSON 时生效。
+     * <p>至少两行合法 JSON 才算 NDJSON 流（单行合法 JSON 直接走 {@link JSON#isValid(String)} 短路，
+     * 不会进入本方法）；任一行非法即放弃，返回 {@code null} 走常规修复管道。</p>
+     *
+     * @param text 输入文本
+     * @return 组装后的 JSON 数组；非 NDJSON 流返回 {@code null}
+     */
+    private static String toNdjsonArray(final String text) {
+        final List<String> jsonLines = new ArrayList<>();
+        for (final String line : text.split("\\R")) {
+            if (StrUtil.isBlank(line)) {
+                continue;
+            }
+            final String stripped = line.strip();
+            if (!JSON.isValid(stripped)) {
+                return null;
+            }
+            jsonLines.add(stripped);
+        }
+        if (jsonLines.size() < 2) {
+            return null;
+        }
+        final StringBuilder sb = new StringBuilder(text.length() + 16);
+        sb.append(NDJSON_OPEN);
+        for (int i = 0; i < jsonLines.size(); i++) {
+            sb.append(i > 0 ? NDJSON_SEPARATOR : NDJSON_INDENT).append(jsonLines.get(i));
+        }
+        sb.append(NDJSON_CLOSE);
+        return sb.toString();
     }
 
     /**

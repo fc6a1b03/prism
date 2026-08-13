@@ -203,6 +203,7 @@ public class MainPanel {
                 _ -> this.optJson(redoButton, undoButton, editor.getEditor(), new JsonSchemaGenerator())));
         panel.add(this.createToolButton(BUNDLE.getString("json.mock.generate"), AllIcons.Actions.Rerun,
                 _ -> this.optJson(redoButton, undoButton, editor.getEditor(), new JsonMockGenerator())));
+        panel.add(this.createKeyCaseButton(redoButton, undoButton, editor));
         panel.add(this.createToolButton(BUNDLE.getString("json.validate"), AllIcons.General.GreenCheckmark,
                 _ -> this.showValidateDialog(editor)));
         panel.add(this.createToolButton(BUNDLE.getString("json.analyze"), AllIcons.Actions.Find,
@@ -211,11 +212,45 @@ public class MainPanel {
     }
 
     /**
+     * 创建键名风格转换按钮：点击弹出四种命名风格菜单，选择后即时转换并写回编辑器。
+     *
+     * @param redoButton 重做按钮
+     * @param undoButton 撤消按钮
+     * @param editor     当前编辑
+     * @return 按钮
+     */
+    private JButton createKeyCaseButton(final JButton redoButton, final JButton undoButton, final EditorTextField editor) {
+        final JButton button = this.createToolButton(BUNDLE.getString("json.key.case.convert"), AllIcons.Json.Object, null);
+        button.addActionListener(_ -> this.showKeyCaseMenu(button, redoButton, undoButton, editor));
+        return button;
+    }
+
+    /**
+     * 弹出键名风格选择菜单（四种命名风格）。
+     *
+     * @param invoker    触发按钮
+     * @param redoButton 重做按钮
+     * @param undoButton 撤消按钮
+     * @param editor     当前编辑
+     */
+    private void showKeyCaseMenu(final JButton invoker, final JButton redoButton, final JButton undoButton,
+                                 final EditorTextField editor) {
+        if (Objects.isNull(editor) || Objects.isNull(editor.getProject())) return;
+        final JPopupMenu menu = new JPopupMenu();
+        for (final JsonKeyConverter.KeyCase keyCase : JsonKeyConverter.KeyCase.values()) {
+            final JMenuItem item = new JMenuItem(BUNDLE.getString(keyCase.i18nKey()));
+            item.addActionListener(_ -> this.optJson(redoButton, undoButton, editor.getEditor(), new JsonKeyConverter(keyCase)));
+            menu.add(item);
+        }
+        menu.show(invoker, 0, invoker.getHeight());
+    }
+
+    /**
      * 创建工具条按钮（图标 + 提示文本）。
      *
      * @param tooltip 提示文本
      * @param icon    图标
-     * @param action  点击动作
+     * @param action  点击动作；为 {@code null} 时不绑定动作（由调用方另行绑定）
      * @return 按钮
      */
     private JButton createToolButton(final String tooltip, final Icon icon, final ActionListener action) {
@@ -224,7 +259,9 @@ public class MainPanel {
         button.setToolTipText(tooltip);
         button.setMargin(JBUI.emptyInsets());
         button.setPreferredSize(new Dimension(BUTTON_SIZE, BUTTON_SIZE));
-        button.addActionListener(action);
+        if (Objects.nonNull(action)) {
+            button.addActionListener(action);
+        }
         return button;
     }
 
