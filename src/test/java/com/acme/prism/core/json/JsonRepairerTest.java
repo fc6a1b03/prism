@@ -3,11 +3,13 @@ package com.acme.prism.core.json;
 import com.acme.prism.core.json.JsonRepairer.FixType;
 import com.acme.prism.core.json.JsonRepairer.RepairResult;
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -248,5 +250,55 @@ class JsonRepairerTest {
         assertNotNull(result);
         final List<FixType> fixes = result.fixes();
         assertEquals(fixes.stream().distinct().toList(), fixes, "修复类型列表应去重");
+    }
+
+    @Test
+    @DisplayName("正常：NDJSON 两行流组装为数组")
+    void assemblesNdjsonStream() {
+        final RepairResult result = JsonRepairer.repair("{\"a\":1}\n{\"b\":2}");
+        assertNotNull(result);
+        final JSONArray arr = JSON.parseArray(result.json());
+        assertNotNull(arr);
+        assertEquals(2, arr.size());
+        assertTrue(result.fixes().contains(FixType.NDJSON));
+    }
+
+    @Test
+    @DisplayName("正常：NDJSON 空行被忽略，内容行全部保留")
+    void ignoresBlankLinesInNdjson() {
+        final RepairResult result = JsonRepairer.repair("{\"a\":1}\n\n{\"b\":2}\n");
+        assertNotNull(result);
+        final JSONArray arr = JSON.parseArray(result.json());
+        assertNotNull(arr);
+        assertEquals(2, arr.size());
+    }
+
+    @Test
+    @DisplayName("正常：NDJSON 行内嵌套数组与对象完整保留")
+    void keepsNestedContentInNdjson() {
+        final RepairResult result = JsonRepairer.repair("{\"a\":[1,2]}\n{\"b\":{\"c\":3}}");
+        assertNotNull(result);
+        final JSONArray arr = JSON.parseArray(result.json());
+        assertNotNull(arr);
+        assertEquals(2, arr.size());
+        assertEquals(2, arr.getJSONObject(0).getJSONArray("a").size());
+        assertEquals(3, arr.getJSONObject(1).getJSONObject("b").getIntValue("c"));
+    }
+
+    @Test
+    @DisplayName("异常：任一行非法则不走 NDJSON（走常规管道）")
+    void rejectsNdjsonWithInvalidLine() {
+        final RepairResult result = JsonRepairer.repair("{\"a\":1}\n{bad");
+        if (Objects.nonNull(result)) {
+            assertFalse(result.fixes().contains(FixType.NDJSON), "含非法行不应按 NDJSON 组装");
+        }
+    }
+
+    @Test
+    @DisplayName("边界：单行合法 JSON 不触发 NDJSON")
+    void singleLineJsonNotNdjson() {
+        final RepairResult result = JsonRepairer.repair("{\"a\":1}");
+        assertNotNull(result);
+        assertFalse(result.fixes().contains(FixType.NDJSON));
     }
 }

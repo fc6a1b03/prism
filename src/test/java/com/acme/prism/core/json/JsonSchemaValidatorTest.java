@@ -355,4 +355,56 @@ class JsonSchemaValidatorTest {
         );
         assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("not")));
     }
+
+    @Test
+    @DisplayName("正常：if 匹配时应用 then，通过")
+    void appliesThenWhenIfMatches() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"country\":\"US\",\"postal\":\"12345\"}",
+                "{\"type\":\"object\",\"if\":{\"properties\":{\"country\":{\"const\":\"US\"}}},\"then\":{\"required\":[\"postal\"]}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "if 匹配且 then 满足应通过");
+    }
+
+    @Test
+    @DisplayName("异常：if 匹配时应用 then，then 失败被检出")
+    void reportsThenFailure() {
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"country\":\"US\"}",
+                "{\"type\":\"object\",\"if\":{\"properties\":{\"country\":{\"const\":\"US\"}}},\"then\":{\"required\":[\"postal\"]}}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("postal")),
+                "if 匹配但 then 不满足应检出 postal 缺失");
+    }
+
+    @Test
+    @DisplayName("异常：if 不匹配时应用 else，else 失败被检出")
+    void reportsElseFailure() {
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"country\":\"CN\"}",
+                "{\"type\":\"object\",\"if\":{\"properties\":{\"country\":{\"const\":\"US\"}}},\"else\":{\"required\":[\"province\"]}}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("province")),
+                "if 不匹配且 else 不满足应检出 province 缺失");
+    }
+
+    @Test
+    @DisplayName("正常：if 不匹配且无 else 时通过")
+    void passesWhenIfMismatchesWithoutElse() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"country\":\"CN\"}",
+                "{\"type\":\"object\",\"if\":{\"properties\":{\"country\":{\"const\":\"US\"}}},\"then\":{\"required\":[\"postal\"]}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "if 不匹配且无 else 应通过");
+    }
+
+    @Test
+    @DisplayName("边界：无 if 时 then/else 被忽略")
+    void ignoresThenWithoutIf() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"v\":1}",
+                "{\"type\":\"object\",\"then\":{\"required\":[\"postal\"]}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "无 if 时 then 应被忽略（标准语义）");
+    }
 }
