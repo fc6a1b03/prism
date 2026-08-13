@@ -58,6 +58,7 @@ public class JsonParser {
         register(converters, AnyFile.URL_PARAMS, new UrlParamsConverter());
         register(converters, AnyFile.PROPERTIES, new PropertiesConverter());
         register(converters, AnyFile.SQL, new SqlConverter());
+        register(converters, AnyFile.MARKDOWN, new MarkdownTableConverter());
         return Map.copyOf(converters);
     }
 

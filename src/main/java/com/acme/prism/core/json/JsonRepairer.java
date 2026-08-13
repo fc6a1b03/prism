@@ -18,8 +18,8 @@ import java.util.regex.Pattern;
  *
  * <p>修复采用分层管道：BOM 剥离 → NDJSON 检测组装 → Markdown 代码块剥离 → JSONP 剥离 →
  * 日志前缀剥离 → 特殊引号规范化 → 单引号转双引号 → 裸键补引号 → 注释剥离 →
- * 字符串提取保护 → 骨架修复（逗号/字面量/闭合括号）→ 字符串还原 → 合法性验证。
- * 字符串内容在修复期间被占位符保护，避免正则误伤值内容。</p>
+ * 字符串提取保护 → MongoDB 包装剥离 → 骨架修复（逗号/字面量/闭合括号）→
+ * 字符串还原 → 合法性验证。字符串内容在修复期间被占位符保护，避免正则误伤值内容。</p>
  *
  * @author 拒绝者
  * @date 2026-08-05
@@ -69,6 +69,31 @@ public final class JsonRepairer implements JsonOperation {
      * 非标准字面量模式
      */
     private static final Pattern LITERAL = Pattern.compile("\\b(undefined|None|True|False|NaN|Infinity)\\b");
+    /**
+     * MongoDB 扩展 JSON 包装模式（骨架层匹配：字符串内容已占位化，仅结构位置生效）。
+     * <p>分组 1-4 为数字包装（直接取数字），5-10 为字符串包装（还原占位符），
+     * MinKey/MaxKey 整体匹配转 null。交替分支用非捕获组，分组编号与
+     * {@link #normalizeMongoWrapper} 对应。</p>
+     */
+    private static final Pattern MONGODB_WRAPPER = Pattern.compile(
+            "\\bNumberLong\\s*\\(\\s*(-?\\d+)\\s*\\)" +
+            "|\\bNumberInt\\s*\\(\\s*(-?\\d+)\\s*\\)" +
+            "|\\bTimestamp\\s*\\(\\s*(-?\\d+)\\s*,\\s*-?\\d+\\s*\\)" +
+            "|\\bnew\\s+Date\\s*\\(\\s*(-?\\d+)\\s*\\)" +
+            "|\\bISODate\\s*\\(\\s*(__PRISM_STR_\\d+__)\\s*\\)" +
+            "|\\bObjectId\\s*\\(\\s*(__PRISM_STR_\\d+__)\\s*\\)" +
+            "|\\bUUID\\s*\\(\\s*(__PRISM_STR_\\d+__)\\s*\\)" +
+            "|\\bNumberDecimal\\s*\\(\\s*(__PRISM_STR_\\d+__)\\s*\\)" +
+            "|\\bBinData\\s*\\(\\s*\\d+\\s*,\\s*(__PRISM_STR_\\d+__)\\s*\\)" +
+            "|\\bnew\\s+Date\\s*\\(\\s*(__PRISM_STR_\\d+__)\\s*\\)" +
+            "|\\bMinKey\\b|\\bMaxKey\\b");
+    /**
+     * MongoDB 包装特征签名（原始文本检测用：精确词边界匹配）。
+     * <p>含 {@code new Date}：误报代价为零——普通代码文本原就被 URL 参数等检测
+     * 误转或转不出 JSON，短路后行为只会更稳定，故不排除。</p>
+     */
+    private static final Pattern MONGODB_SIGNATURE = Pattern.compile(
+            "\\b(?:NumberLong|NumberInt|Timestamp|ISODate|ObjectId|UUID|NumberDecimal|BinData|MinKey|MaxKey)\\b|\\bnew\\s+Date\\b");
     /**
      * NDJSON 组装缩进前缀
      */
@@ -141,7 +166,11 @@ public final class JsonRepairer implements JsonOperation {
         /**
          * NDJSON 流组装为 JSON 数组
          */
-        NDJSON("json.repair.fix.ndjson", 0.10);
+        NDJSON("json.repair.fix.ndjson", 0.10),
+        /**
+         * MongoDB 扩展 JSON 包装剥离
+         */
+        MONGODB("json.repair.fix.mongodb", 0.10);
 
         /**
          * 修复类型 i18n 键
@@ -246,6 +275,12 @@ public final class JsonRepairer implements JsonOperation {
         // 10. 提取字符串为占位符，保护值内容
         final StringExtraction extraction = extractStrings(text);
         String skeleton = extraction.skeleton();
+        // 10.5 MongoDB 扩展 JSON 包装剥离（骨架层：字符串值内容已占位化，不会误伤）
+        final String beforeMongo = skeleton;
+        skeleton = MONGODB_WRAPPER.matcher(skeleton).replaceAll(JsonRepairer::normalizeMongoWrapper);
+        if (!skeleton.equals(beforeMongo)) {
+            fixes.add(FixType.MONGODB);
+        }
         // 11. 骨架修复（骨架无字符串内容，正则安全）
         final String beforeTrailing = skeleton;
         skeleton = TRAILING_COMMA.matcher(skeleton).replaceAll("$1");
@@ -299,6 +334,18 @@ public final class JsonRepairer implements JsonOperation {
     public String process(final String json) {
         final RepairResult result = repair(json);
         return Objects.isNull(result) ? json : result.json();
+    }
+
+    /**
+     * 检测文本是否含 MongoDB 扩展 JSON 包装特征（精确词边界，供格式自动识别前置判断，
+     * 避免被 YAML 检测抢先消费）。含 {@code new Date}：普通代码文本原就被 URL 参数等
+     * 检测误转或转不出 JSON，短路后行为只会更稳定，无破坏面。
+     *
+     * @param text 输入文本
+     * @return 是否含 MongoDB 包装特征
+     */
+    public static boolean containsMongoWrapper(final String text) {
+        return StrUtil.isNotBlank(text) && MONGODB_SIGNATURE.matcher(text).find();
     }
 
     /**
@@ -752,6 +799,29 @@ public final class JsonRepairer implements JsonOperation {
         }
         sb.append(skeleton, cursor, skeleton.length());
         return sb.toString();
+    }
+
+    /**
+     * MongoDB 包装规范化替换：数字包装返回数字，字符串包装返回占位符引用，
+     * MinKey/MaxKey 转为 null。
+     *
+     * @param match 匹配结果
+     * @return 规范化后的值
+     */
+    private static String normalizeMongoWrapper(final MatchResult match) {
+        for (int group = 1; group <= 4; group++) {
+            final String number = match.group(group);
+            if (Objects.nonNull(number)) {
+                return number;
+            }
+        }
+        for (int group = 5; group <= 10; group++) {
+            final String placeholder = match.group(group);
+            if (Objects.nonNull(placeholder)) {
+                return placeholder;
+            }
+        }
+        return "null";
     }
 
     /**

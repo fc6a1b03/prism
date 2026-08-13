@@ -2,7 +2,7 @@
 [![GitHub Repo stars](https://img.shields.io/github/stars/fc6a1b03/prism?style=flat&logo=github)](https://github.com/fc6a1b03/prism/stargazers)
 [![GitHub total commits](https://img.shields.io/github/commit-activity/t/fc6a1b03/prism)](https://github.com/fc6a1b03/prism/commits)
 [![JDK](https://img.shields.io/badge/JDK-25-green.svg)](https://www.oracle.com/java/)
-[![Gradle](https://img.shields.io/badge/Gradle-9.6.1-02303A.svg)](https://gradle.org)
+[![Gradle](https://img.shields.io/badge/Gradle-9.7.0-02303A.svg)](https://gradle.org)
 [![IDEA](https://img.shields.io/badge/IntelliJ_IDEA-2026.2-FF318C.svg)](https://www.jetbrains.com/idea)
 [![GitHub Release](https://img.shields.io/github/v/release/fc6a1b03/prism)](https://github.com/fc6a1b03/prism/releases/latest)
 [![Build](https://img.shields.io/github/actions/workflow/status/fc6a1b03/prism/build_jar.yml?branch=master)](https://github.com/fc6a1b03/prism/actions)
@@ -11,20 +11,20 @@
 # Prism Plugin
 
 Prism 是一个面向 IntelliJ IDEA 2026.2 的效率插件（原名 Json Helper），集 JSON 工具与编辑器增强于一身。  
-JSON 侧支持编辑、压缩、转义、JsonPath 查询、Java 类与 JSON 结构互转，以及 XML / YAML / TOML / Properties / CSV / XLSX 等格式转换；增强侧提供代码地图（minimap）、彩虹括号与变量高亮、颜色字面量、项目树文件注释与压缩包浏览、代码截图、项目 / HTTP / 端口搜索等能力。
+JSON 侧支持编辑、压缩、转义、JsonPath 查询、Java 类与 JSON 结构互转，以及 XML / YAML / TOML / Properties / CSV / XLSX / Markdown 等格式转换；增强侧提供代码地图（minimap）、彩虹括号与变量高亮、颜色字面量、项目树文件注释与压缩包浏览、代码截图、项目 / HTTP / 端口搜索等能力。
 
 ## 当前基线
 
 - IntelliJ IDEA: `2026.2`
 - Java: `25`
-- Gradle: `9.6.1`
+- Gradle: `9.7.0`
 - 安装方式: `build/distributions/*.zip` 自定义本地安装
 - 插件 ID: `com.acme.prism`
 
 ## 主要能力
 
 - JSON 编辑、格式化、压缩、转义与反转义
-- **自动修复损坏 JSON**（单引号/缺逗号/尾逗号/注释/JSONP 包装/裸键/非标准字面量），带置信度与修复日志
+- **自动修复损坏 JSON**（单引号/缺逗号/尾逗号/注释/JSONP 包装/裸键/非标准字面量/NDJSON 流/MongoDB 扩展 JSON 包装），带置信度与修复日志
 - **按键递归排序、扁平化/还原**（点号键与嵌套结构互转）、**JSON Schema（2020-12）生成**
 - **右侧面板深度工具**：结构分析（键/对象/数组/深度/大小统计、重复键检测）、树形面板展开全部/折叠全部、选中节点路径与完整值详情
 - 从 JSON 生成 Java Class / Record
@@ -45,7 +45,7 @@ JSON 侧支持编辑、压缩、转义、JsonPath 查询、Java 类与 JSON 结�
 
 ## 开发与打包
 
-本项目已生成 Gradle Wrapper（`gradlew` / `gradlew.bat`，固定 `9.6.1`），优先使用 `./gradlew`；也可使用系统中的 `gradle` 命令，Java 编译与运行环境固定为 `25`。
+本项目已生成 Gradle Wrapper（`gradlew` / `gradlew.bat`，固定 `9.7.0`），优先使用 `./gradlew`；也可使用系统中的 `gradle` 命令，Java 编译与运行环境固定为 `25`。
 
 ```bash
 ./gradlew printAllVersions
@@ -104,7 +104,7 @@ src/main/java/com/acme/prism
 GitHub Actions 工作流 [build_jar.yml](.github/workflows/build_jar.yml) 已适配当前基线：
 
 - 固定 `Java 25`
-- 固定 `Gradle 9.6.1`
+- 固定 `Gradle 9.7.0`
 - 运行 `test` 单元测试
 - 构建 `buildPlugin`
 - 校验 `verifyPluginProjectConfiguration` 与 `verifyPluginStructure`

@@ -19,7 +19,7 @@ jobs:
 
     env:
       JAVA_VERSION: "25"
-      GRADLE_VERSION: "9.6.1"
+      GRADLE_VERSION: "9.7.0"
 
     steps:
       - name: Checkout code

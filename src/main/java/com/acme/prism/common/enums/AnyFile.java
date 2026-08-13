@@ -58,6 +58,10 @@ public enum AnyFile {
      */
     BASE64,
     /**
+     * Markdown表格
+     */
+    MARKDOWN,
+    /**
      * 单文本
      */
     TEXT;
@@ -71,6 +75,7 @@ public enum AnyFile {
         return switch (this) {
             case CLASS, RECORD -> "java";
             case SQL -> "sql";
+            case MARKDOWN -> "md";
             case JSON, XML, YAML, TOML, CSV, XLSX, PROPERTIES -> this.name().toLowerCase(Locale.ROOT);
             default -> "txt";
         };
