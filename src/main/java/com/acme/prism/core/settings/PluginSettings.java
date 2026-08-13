@@ -1,5 +1,6 @@
 package com.acme.prism.core.settings;
 
+import cn.hutool.core.util.StrUtil;
 import com.acme.prism.core.minimap.MinimapEditorFactoryListener;
 import com.intellij.ide.projectView.ProjectView;
 import com.intellij.openapi.options.Configurable;
@@ -8,7 +9,9 @@ import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.util.NlsContexts;
 import com.intellij.ui.IdeBorderFactory;
 import com.intellij.ui.components.JBCheckBox;
+import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.FormBuilder;
+import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -75,7 +78,8 @@ public class PluginSettings implements Configurable {
                 || component.getRainbowBracketPair() != settings.rainbowBracketPairEnabled
                 || component.getRainbowVariable() != settings.rainbowVariableEnabled
                 || component.getColorHighlighter() != settings.colorHighlighterEnabled
-                || component.getMinimap() != settings.minimapEnabled;
+                || component.getMinimap() != settings.minimapEnabled
+                || !Objects.equals(component.getAesKey(), settings.aesKey);
     }
 
     @Override
@@ -100,6 +104,7 @@ public class PluginSettings implements Configurable {
         settings.rainbowVariableEnabled = component.getRainbowVariable();
         settings.colorHighlighterEnabled = component.getColorHighlighter();
         settings.minimapEnabled = component.getMinimap();
+        settings.aesKey = StrUtil.emptyIfNull(component.getAesKey());
         // 代码地图开关变更后同步全部已打开编辑器的挂载状态
         if (previousMinimapEnabled != settings.minimapEnabled) {
             MinimapEditorFactoryListener.syncAllEditors();
@@ -127,6 +132,7 @@ public class PluginSettings implements Configurable {
         component.setRainbowVariable(settings.rainbowVariableEnabled);
         component.setColorHighlighter(settings.colorHighlighterEnabled);
         component.setMinimap(settings.minimapEnabled);
+        component.setAesKey(settings.aesKey);
     }
 
     @Override
@@ -154,13 +160,22 @@ public class PluginSettings implements Configurable {
         private final JBCheckBox rainbowVariable = new JBCheckBox(BUNDLE.getString("plugin.setting.rainbow.variable"));
         private final JBCheckBox colorHighlighter = new JBCheckBox(BUNDLE.getString("plugin.setting.color.highlighter"));
         private final JBCheckBox minimap = new JBCheckBox(BUNDLE.getString("plugin.setting.minimap"));
+        private final JBTextField aesKey = new JBTextField();
 
         public PluginSettingsComponent() {
+            // 密钥为全局配置（application 级），配一次所有项目通用，附灰色小字提示
+            final JPanel aesKeyRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+            aesKey.setPreferredSize(new Dimension(300, aesKey.getPreferredSize().height));
+            final JLabel aesKeyTip = new JLabel(BUNDLE.getString("plugin.setting.aes.key.tip"));
+            aesKeyTip.setForeground(UIUtil.getContextHelpForeground());
+            aesKeyRow.add(aesKey);
+            aesKeyRow.add(aesKeyTip);
             mainPanel = FormBuilder.createFormBuilder()
                     .addComponent(of(BUNDLE.getString("plugin.setting.title1"), copyJson, jsonHelper), 1)
                     .addComponent(of(BUNDLE.getString("plugin.setting.title2"), projectSearch, httpSearch, portSearch), 1)
                     .addComponent(of(BUNDLE.getString("plugin.setting.title3"), archiveNode, fileInfoNode), 1)
                     .addComponent(of(BUNDLE.getString("plugin.setting.title4"), rainbowBracketPair, rainbowVariable, colorHighlighter, minimap), 1)
+                    .addComponent(of(BUNDLE.getString("plugin.setting.title5"), aesKeyRow), 1)
                     .addComponentFillVertically(new JPanel(), 0)
                     .getPanel();
         }
@@ -281,6 +296,14 @@ public class PluginSettings implements Configurable {
 
         public void setMinimap(final boolean status) {
             minimap.setSelected(status);
+        }
+
+        public String getAesKey() {
+            return aesKey.getText();
+        }
+
+        public void setAesKey(final String key) {
+            aesKey.setText(key);
         }
     }
 }
