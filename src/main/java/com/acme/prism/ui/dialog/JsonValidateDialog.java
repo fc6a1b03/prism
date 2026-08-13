@@ -58,6 +58,14 @@ public class JsonValidateDialog extends DialogWrapper {
      */
     private static final int RESULT_TABLE_MIN_HEIGHT = 140;
     /**
+     * 校验目标 JSON 区高度（像素）：固定上限防止大 JSON 内容撑高 NORTH 区挤掉下方面板
+     */
+    private static final int TARGET_JSON_HEIGHT = 200;
+    /**
+     * 校验目标 JSON 区最小高度（像素）
+     */
+    private static final int TARGET_JSON_MIN_HEIGHT = 120;
+    /**
      * 加载语言资源文件
      */
     private static final ResourceBundle BUNDLE = ResourceBundle.getBundle("messages.PrismBundle");
@@ -122,7 +130,11 @@ public class JsonValidateDialog extends DialogWrapper {
         panel.add(new JLabel(BUNDLE.getString("json.validate.target")), BorderLayout.NORTH);
         this.jsonViewer = this.createEditor(Boolean.FALSE);
         this.jsonViewer.setText(this.jsonText);
-        panel.add(new JBScrollPane(this.jsonViewer), BorderLayout.CENTER);
+        // 固定高度上限：内容超高时内部滚动，防止大 JSON 撑高 NORTH 区挤掉 Schema/结果面板
+        final JBScrollPane viewerScroll = new JBScrollPane(this.jsonViewer);
+        viewerScroll.setPreferredSize(new Dimension(0, TARGET_JSON_HEIGHT));
+        viewerScroll.setMinimumSize(new Dimension(0, TARGET_JSON_MIN_HEIGHT));
+        panel.add(viewerScroll, BorderLayout.CENTER);
         return panel;
     }
 

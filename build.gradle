@@ -73,6 +73,11 @@ intellijPlatform {
         version = project.version.toString()
         // sinceBuild 自 IGP 2.14 起默认取目标平台 major build（2026.2 → 262），无需显式声明
         changeNotes = """
+            <b>0.23.1</b>
+            <ul>
+                <li>修复校验弹窗布局：目标 JSON 区固定高度（超高内部滚动），大 JSON 不再撑高挤掉 Schema 与结果面板。</li>
+                <li>修复代码地图兼容：弹窗（校验/转换对话框）内编辑器不挂 minimap（创建时判定 + 显示事件裁决双保险，含滚动条恢复），主编辑器不受影响。</li>
+            </ul>
             <b>0.23.0</b>
             <ul>
                 <li>新增 AES 密文解密：AesDecryptor（AES-256-CBC，IV 与密钥同源取前 16 字节，PKCS7 填充），工具条新增解密按钮，密文解密后格式化写回编辑器（非 JSON 明文原样写回并提示）。</li>
