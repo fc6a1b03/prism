@@ -21,14 +21,14 @@
 **核心功能：**
 
 - JSON 编辑、格式化、压缩、转义与反转义
-- 自动修复损坏 JSON（单引号/缺逗号/尾逗号/注释/JSONP 包装/裸键/非标准字面量），带置信度与修复日志
+- 自动修复损坏 JSON（单引号/缺逗号/尾逗号/注释/JSONP 包装/裸键/非标准字面量/NDJSON 流/MongoDB 扩展 JSON 包装），带置信度与修复日志
 - 按键递归排序、扁平化/还原（点号键与嵌套结构互转）、JSON Schema（2020-12）生成
 - 右侧面板深度工具：工具条（修复/排序/展开/还原/Schema/分析）、结构分析（键/对象/数组/深度/大小、重复键检测）、树形面板展开全部/折叠全部与选中节点路径/值详情
 - 从 JSON 生成 Java Class / Record
 - 从 Java 类字段复制 JSON 结构
 - JsonPath / JMESPath 查询与树形浏览
 - URL、JWT、本地文件路径、Web 路径自动解析为 JSON
-- JSON 与 XML / YAML / TOML / Properties / CSV / XLSX / Base64 / URL Params 互转
+- JSON 与 XML / YAML / TOML / Properties / CSV / XLSX / Base64 / URL Params / Markdown 互转
 - Search Everywhere 集成：项目搜索、HTTP 请求文件搜索、端口搜索、压缩包内容搜索
 - 项目树中将压缩包（zip / 7z / jar / war / ear / tar / tar.gz / tgz / tar.bz2 / tbz2 / tar.xz / txz / gz / bz2 /
   xz）作为目录展开浏览
@@ -39,7 +39,7 @@
 ## 技术栈
 
 - **语言**: Java 25（toolchain 与 `options.release` 均取自版本表 `jvm`）
-- **构建工具**: Gradle 9.6.1 + IntelliJ Platform Gradle Plugin 2.18.1
+- **构建工具**: Gradle 9.7.0 + IntelliJ Platform Gradle Plugin 2.18.1
 - **目标平台**: IntelliJ IDEA 2026.2（sinceBuild = 262，由 IGP 2.14+ 按目标平台 major build 默认生成，无需显式声明）
 - **UI 框架**: IntelliJ Platform UI（Swing-based）
 - **字符编码**: 全项目 UTF-8
@@ -136,6 +136,7 @@ src/main/
 │   │   │       ├── XmlConverter.java / YamlConverter.java / TomlConverter.java
 │   │   │       ├── CsvConverter.java / XlsxConverter.java
 │   │   │       ├── PropertiesConverter.java / Base64Converter.java / UrlParamsConverter.java
+│   │   │       ├── SqlConverter.java / MarkdownTableConverter.java
 │   │   │       ├── ClassConverter.java / RecordConverter.java
 │   │   │       └── JavaStructure.java / TableStructure.java  # 结构模型
 │   │   ├── rainbow/               # 彩虹高亮
@@ -192,7 +193,7 @@ src/main/
 
 ## 构建命令
 
-项目已生成 Gradle Wrapper（`gradlew` / `gradlew.bat`，固定 9.6.1），优先使用 `./gradlew`；也可使用系统 `gradle` 命令：
+项目已生成 Gradle Wrapper（`gradlew` / `gradlew.bat`，固定 9.7.0），优先使用 `./gradlew`；也可使用系统 `gradle` 命令：
 
 ```bash
 # 打印版本信息
@@ -344,7 +345,7 @@ Everywhere、项目树节点、代码地图渲染）不做单元测试，验证�
 GitHub Actions 工作流 `.github/workflows/build_jar.yml`：
 
 - **触发方式**: 手动 (`workflow_dispatch`)
-- **运行环境**: `ubuntu-latest`，Java 25，Gradle 9.6.1
+- **运行环境**: `ubuntu-latest`，Java 25，Gradle 9.7.0
 - **流程**: 从 `settings.gradle` 提取版本号 → 缓存 IntelliJ Platform 构件 → `test` + `buildPlugin` +
   `verifyPluginStructure` → 上传 ZIP 工件 → 创建 GitHub Release
 
@@ -382,7 +383,7 @@ GitHub Actions 工作流 `.github/workflows/build_jar.yml`：
 private static Map<AnyFile, DataFormatConverter> createConverters() {
     final EnumMap<AnyFile, DataFormatConverter> converters = new EnumMap<>(AnyFile.class);
     register(converters, AnyFile.XML, new XmlConverter());
-    // ... 共 10 个转换器
+    // ... 共 12 个转换器
     return Map.copyOf(converters);
 }
 ```

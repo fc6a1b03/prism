@@ -301,4 +301,62 @@ class JsonRepairerTest {
         assertNotNull(result);
         assertFalse(result.fixes().contains(FixType.NDJSON));
     }
+
+    @Test
+    @DisplayName("正常：MongoDB 扩展 JSON 数字包装剥离")
+    void stripsMongoNumberWrappers() {
+        final RepairResult result = JsonRepairer.repair(
+                "{\"a\":NumberLong(123), \"b\":NumberInt(45), \"c\":new Date(1700000000), \"d\":Timestamp(1700000000, 1)}");
+        assertNotNull(result);
+        final JSONObject obj = JSON.parseObject(result.json());
+        assertEquals(123, obj.getLongValue("a"));
+        assertEquals(45, obj.getIntValue("b"));
+        assertEquals(1700000000, obj.getLongValue("c"));
+        assertEquals(1700000000, obj.getLongValue("d"));
+        assertTrue(result.fixes().contains(FixType.MONGODB));
+    }
+
+    @Test
+    @DisplayName("正常：MongoDB 字符串包装剥离为字符串")
+    void stripsMongoStringWrappers() {
+        final RepairResult result = JsonRepairer.repair(
+                "{\"id\":ObjectId(\"507f1f77bcf86cd799439011\"), \"time\":ISODate(\"2024-01-01T00:00:00Z\"), \"uid\":UUID(\"12345678-1234-1234-1234-123456789abc\")}");
+        assertNotNull(result);
+        final JSONObject obj = JSON.parseObject(result.json());
+        assertEquals("507f1f77bcf86cd799439011", obj.getString("id"));
+        assertEquals("2024-01-01T00:00:00Z", obj.getString("time"));
+        assertEquals("12345678-1234-1234-1234-123456789abc", obj.getString("uid"));
+        assertTrue(result.fixes().contains(FixType.MONGODB));
+    }
+
+    @Test
+    @DisplayName("正常：new Date 字符串日期形式剥离")
+    void stripsNewDateStringForm() {
+        final RepairResult result = JsonRepairer.repair("{\"d\": new Date(\"2024-01-01T00:00:00Z\")}");
+        assertNotNull(result);
+        final JSONObject obj = JSON.parseObject(result.json());
+        assertEquals("2024-01-01T00:00:00Z", obj.getString("d"));
+        assertTrue(result.fixes().contains(FixType.MONGODB));
+    }
+
+    @Test
+    @DisplayName("正常：MongoDB MinKey/MaxKey 转 null")
+    void normalizesMongoMinMaxKey() {
+        final RepairResult result = JsonRepairer.repair("{\"a\":MinKey, \"b\":MaxKey}");
+        assertNotNull(result);
+        final JSONObject obj = JSON.parseObject(result.json());
+        assertNull(obj.get("a"));
+        assertNull(obj.get("b"));
+        assertTrue(result.fixes().contains(FixType.MONGODB));
+    }
+
+    @Test
+    @DisplayName("边界：字符串值内的包装文本不误伤")
+    void mongoWrappersInsideStringUntouched() {
+        final RepairResult result = JsonRepairer.repair("{\"note\": \"NumberLong(123) stays\"}");
+        assertNotNull(result);
+        final JSONObject obj = JSON.parseObject(result.json());
+        assertEquals("NumberLong(123) stays", obj.getString("note"));
+        assertFalse(result.fixes().contains(FixType.MONGODB), "字符串值内的包装文本不应被剥离");
+    }
 }

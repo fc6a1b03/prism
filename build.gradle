@@ -73,6 +73,15 @@ intellijPlatform {
         version = project.version.toString()
         // sinceBuild 自 IGP 2.14 起默认取目标平台 major build（2026.2 → 262），无需显式声明
         changeNotes = """
+            <b>0.22.0</b>
+            <ul>
+                <li>JSON 修复扩展：MongoDB 扩展 JSON 包装剥离（NumberLong/NumberInt/Timestamp/new Date/ISODate/ObjectId/UUID/NumberDecimal/BinData，MinKey/MaxKey 转 null），新增 FixType.MONGODB 与修复日志；骨架层正则含词边界加固，字符串值内文本零误伤。</li>
+                <li>修复自动识别拦截：MongoDB 包装文本被 YAML 检测抢先消费成带引号字符串，resolveJson 新增 containsMongoWrapper 前置短路（含根因佐证与端到端单测，new Date 同步纳入签名）。</li>
+                <li>Schema 校验器补全 contains/minContains/maxContains（含 minContains=0 允许零匹配语义）、propertyNames、dependentRequired、dependentSchemas（独立校验防递归）。</li>
+                <li>新增 JSON → Markdown 表格转换：对象数组并集列头/混合数组索引值/单对象键值/标量单列，管道符与换行转义，null 输出空单元格；注册 AnyFile.MARKDOWN，转换对话框自动出现入口。</li>
+                <li>构建升级 Gradle 9.6.1 → 9.7.0：wrapper、CI 工作流、README/AGENTS.md/gradle.properties 引用同步。</li>
+                <li>新增 24 个单元测试（总 549 全绿），i18n 174 键双文件一致。</li>
+            </ul>
             <b>0.21.0</b>
             <ul>
                 <li>新增键名风格转换：JsonKeyConverter 递归转换对象键（camelCase/snake_case/PascalCase/kebab-case 两两互转），分词处理大小写边界、连续大写缩略词（HTTPServer→http_server）、字母数字边界（user2name→user_2_name）；null 值字段保留（与排序器惯例一致）；转换后键名冲突后者覆盖（JSON 重复键固有限制，类 Javadoc 明示）；工具条新增转换按钮（四种风格弹出菜单）。</li>

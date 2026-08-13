@@ -407,4 +407,96 @@ class JsonSchemaValidatorTest {
         );
         assertTrue(ok.issues().isEmpty(), "无 if 时 then 应被忽略（标准语义）");
     }
+
+    @Test
+    @DisplayName("正常：contains 至少一个元素匹配时通过")
+    void passesContains() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"nums\":[1,2,\"x\"]}",
+                "{\"type\":\"object\",\"properties\":{\"nums\":{\"type\":\"array\",\"contains\":{\"type\":\"string\"}}}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "数组含匹配元素应通过");
+
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"nums\":[1,2]}",
+                "{\"type\":\"object\",\"properties\":{\"nums\":{\"type\":\"array\",\"contains\":{\"type\":\"string\"}}}}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("contains")));
+    }
+
+    @Test
+    @DisplayName("正常：minContains 与 maxContains 数量约束")
+    void validatesContainsBounds() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"nums\":[\"a\",\"b\"]}",
+                "{\"type\":\"object\",\"properties\":{\"nums\":{\"type\":\"array\",\"contains\":{\"type\":\"string\"},\"minContains\":2,\"maxContains\":3}}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "2 个匹配在 [2,3] 区间内应通过");
+
+        final ValidationOutcome tooFew = JsonSchemaValidator.validate(
+                "{\"nums\":[\"a\",1]}",
+                "{\"type\":\"object\",\"properties\":{\"nums\":{\"type\":\"array\",\"contains\":{\"type\":\"string\"},\"minContains\":2}}}"
+        );
+        assertTrue(tooFew.issues().stream().anyMatch(issue -> issue.message().contains("contains")));
+
+        final ValidationOutcome tooMany = JsonSchemaValidator.validate(
+                "{\"nums\":[\"a\",\"b\",\"c\"]}",
+                "{\"type\":\"object\",\"properties\":{\"nums\":{\"type\":\"array\",\"contains\":{\"type\":\"string\"},\"maxContains\":2}}}"
+        );
+        assertTrue(tooMany.issues().stream().anyMatch(issue -> issue.message().contains("maxContains")));
+    }
+
+    @Test
+    @DisplayName("正常：propertyNames 校验键名格式")
+    void validatesPropertyNames() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"user_name\":1}",
+                "{\"type\":\"object\",\"propertyNames\":{\"pattern\":\"^[a-z_]+$\"}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "键名匹配正则应通过");
+
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"UserName\":1}",
+                "{\"type\":\"object\",\"propertyNames\":{\"pattern\":\"^[a-z_]+$\"}}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("propertyNames")));
+    }
+
+    @Test
+    @DisplayName("正常：dependentRequired 字段联动必填")
+    void validatesDependentRequired() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"creditCard\":\"1234\",\"billing\":\"addr\"}",
+                "{\"type\":\"object\",\"dependentRequired\":{\"creditCard\":[\"billing\"]}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "触发键存在且联动键齐全应通过");
+
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"creditCard\":\"1234\"}",
+                "{\"type\":\"object\",\"dependentRequired\":{\"creditCard\":[\"billing\"]}}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("dependentRequired")));
+
+        final ValidationOutcome noTrigger = JsonSchemaValidator.validate(
+                "{\"name\":\"x\"}",
+                "{\"type\":\"object\",\"dependentRequired\":{\"creditCard\":[\"billing\"]}}"
+        );
+        assertTrue(noTrigger.issues().isEmpty(), "触发键不存在时联动约束不生效");
+    }
+
+    @Test
+    @DisplayName("正常：dependentSchemas 存在触发键时校验依赖 schema")
+    void validatesDependentSchemas() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"creditCard\":\"1234\",\"billing\":\"addr\"}",
+                "{\"type\":\"object\",\"dependentSchemas\":{\"creditCard\":{\"required\":[\"billing\"]}}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "依赖 schema 满足应通过");
+
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"creditCard\":\"1234\"}",
+                "{\"type\":\"object\",\"dependentSchemas\":{\"creditCard\":{\"required\":[\"billing\"]}}}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("dependentSchemas")));
+    }
 }

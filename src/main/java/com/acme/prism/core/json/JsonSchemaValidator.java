@@ -28,6 +28,7 @@ import java.util.regex.PatternSyntaxException;
  * <p>支持关键字：type（含多类型数组）、required、properties、items、enum、minLength/maxLength、
  * minimum/maximum、pattern、format（email/date-time/date/time/uri/uuid/ipv4/ipv6）、
  * oneOf/anyOf/allOf/not、if/then/else、minItems/maxItems/uniqueItems、minProperties/maxProperties、
+ * contains/minContains/maxContains、propertyNames、dependentRequired、dependentSchemas、
  * exclusiveMinimum/exclusiveMaximum、multipleOf。输出每个失败项（路径/期望/实际/说明）
  * 与已校验字段总数。</p>
  *
@@ -412,6 +413,46 @@ public final class JsonSchemaValidator {
                 }
             }
         }
+        // propertyNames：所有键名均需匹配子 schema（键名作为字符串值独立校验）
+        final Object propertyNames = schemaNode.get("propertyNames");
+        if (propertyNames instanceof final JSONObject namesSchema) {
+            for (final String key : obj.keySet()) {
+                if (!checkMatches(key, namesSchema, path)) {
+                    issues.add(new ValidationIssue(path, "键名满足 propertyNames 约束", key, "键名不满足 propertyNames"));
+                }
+            }
+        }
+        // dependentRequired：存在触发键时联动必填其他键（2020-12 语义）
+        final JSONObject dependentRequired = schemaNode.getJSONObject("dependentRequired");
+        if (Objects.nonNull(dependentRequired)) {
+            for (final String trigger : dependentRequired.keySet()) {
+                if (!obj.containsKey(trigger)) {
+                    continue;
+                }
+                final JSONArray requires = dependentRequired.getJSONArray(trigger);
+                if (Objects.isNull(requires)) {
+                    continue;
+                }
+                for (final Object item : requires) {
+                    final String requiredKey = Convert.toStr(item);
+                    if (!obj.containsKey(requiredKey)) {
+                        issues.add(new ValidationIssue(path,
+                                "存在 %s 时必填 %s".formatted(trigger, requiredKey), "缺失", "dependentRequired 约束不满足"));
+                    }
+                }
+            }
+        }
+        // dependentSchemas：存在触发键时整个对象需满足对应子 schema（独立校验避免递归，与 not 一致）
+        final JSONObject dependentSchemas = schemaNode.getJSONObject("dependentSchemas");
+        if (Objects.nonNull(dependentSchemas)) {
+            for (final String trigger : dependentSchemas.keySet()) {
+                if (obj.containsKey(trigger) && dependentSchemas.get(trigger) instanceof final JSONObject depSchema
+                        && !checkMatches(obj, depSchema, path)) {
+                    issues.add(new ValidationIssue(path,
+                            "存在 %s 时满足依赖 schema".formatted(trigger), "不满足", "dependentSchemas 约束不满足"));
+                }
+            }
+        }
     }
 
     /**
@@ -469,6 +510,36 @@ public final class JsonSchemaValidator {
                 validateValue(arr.get(index), itemSchema, "%s[%d]".formatted(path, index), issues, checked);
             }
         }
+        // contains/minContains/maxContains：2020-12 包含约束（minContains 缺省 1，0 时允许零匹配）
+        final Object contains = schemaNode.get("contains");
+        if (contains instanceof final JSONObject containsSchema) {
+            final long matched = countContainsMatches(arr, containsSchema, path);
+            final int minContains = Objects.requireNonNullElse(schemaNode.getInteger("minContains"), 1);
+            final int effectiveMin = minContains == 0 ? 0 : Math.max(minContains, 1);
+            if (matched < effectiveMin) {
+                issues.add(new ValidationIssue(path, "至少 %d 个元素匹配 contains".formatted(effectiveMin),
+                        "匹配 " + matched + " 个", "contains 约束不满足"));
+            }
+            final Integer maxContains = schemaNode.getInteger("maxContains");
+            if (Objects.nonNull(maxContains) && matched > maxContains) {
+                issues.add(new ValidationIssue(path, "至多 %d 个元素匹配 contains".formatted(maxContains),
+                        "匹配 " + matched + " 个", "maxContains 约束不满足"));
+            }
+        }
+    }
+
+    /**
+     * 统计数组元素中匹配 contains 子 schema 的数量（独立校验，不污染主失败项与计数）。
+     *
+     * @param arr    数组
+     * @param schema 子 schema
+     * @param path   路径
+     * @return 匹配元素数量
+     */
+    private static long countContainsMatches(final JSONArray arr, final JSONObject schema, final String path) {
+        return arr.stream()
+                .filter(element -> checkMatches(element, schema, path))
+                .count();
     }
 
     /**

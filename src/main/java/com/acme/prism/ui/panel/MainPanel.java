@@ -866,6 +866,11 @@ public class MainPanel {
         if (JSON.isValid(jwtResult)) {
             return jwtResult;
         }
+        // MongoDB 扩展 JSON 包装（如 NumberLong(123)）会被 YAML 检测抢先消费成带引号字符串，
+        // 需在 AnyParser 之前短路跳过，交给修复器剥离包装
+        if (JsonRepairer.containsMongoWrapper(text)) {
+            return "";
+        }
         return AnyParser.convert(text);
     }
 
