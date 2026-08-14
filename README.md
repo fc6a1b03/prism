@@ -11,7 +11,7 @@
 # Prism Plugin
 
 Prism 是一个面向 IntelliJ IDEA 2026.2 的效率插件（原名 Json Helper），集 JSON 工具与编辑器增强于一身。  
-JSON 侧支持编辑、压缩、转义、JsonPath 查询、Java 类与 JSON 结构互转，以及 XML / YAML / TOML / Properties / CSV / XLSX / Markdown 等格式转换；增强侧提供代码地图（minimap）、彩虹括号与变量高亮、颜色字面量、项目树文件注释与压缩包浏览、代码截图、项目 / HTTP / 端口搜索等能力。
+JSON 侧支持编辑、压缩、转义、JsonPath 查询、Java 类与 JSON 结构互转，以及 XML / YAML / TOML / Properties / CSV / XLSX / Markdown / TypeScript 等格式转换；增强侧提供代码地图（minimap）、彩虹括号与变量高亮、颜色字面量、项目树文件注释与压缩包浏览、代码截图、项目 / HTTP / 端口搜索等能力。
 
 ## 当前基线
 
@@ -31,7 +31,7 @@ JSON 侧支持编辑、压缩、转义、JsonPath 查询、Java 类与 JSON 结�
 - 从 Java 类复制 JSON 结构
 - JsonPath / JMESPath 查询与树形浏览
 - URL、JWT、本地文件路径、Web 路径自动解析为 JSON
-- JSON 与 XML / YAML / TOML / Properties / CSV / XLSX / Base64 / URL Params 互转
+- JSON 与 XML / YAML / TOML / Properties / CSV / XLSX / Base64 / URL Params / Markdown / TypeScript 互转
 - Search Everywhere 中的项目搜索、HTTP 请求文件搜索、端口搜索与压缩包内容搜索
 - 项目树中将压缩包（zip / 7z / jar / tar 等）作为目录展开浏览，条目只读打开
 - 代码截图复制

@@ -62,6 +62,10 @@ public enum AnyFile {
      */
     MARKDOWN,
     /**
+     * TypeScript 类型定义
+     */
+    TYPESCRIPT,
+    /**
      * 单文本
      */
     TEXT;
@@ -76,6 +80,7 @@ public enum AnyFile {
             case CLASS, RECORD -> "java";
             case SQL -> "sql";
             case MARKDOWN -> "md";
+            case TYPESCRIPT -> "ts";
             case JSON, XML, YAML, TOML, CSV, XLSX, PROPERTIES -> this.name().toLowerCase(Locale.ROOT);
             default -> "txt";
         };

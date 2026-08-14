@@ -155,10 +155,11 @@ public class ConvertAnyDialog extends DialogWrapper {
                     ApplicationManager.getApplication().invokeLater(() -> {
                         // 删掉旧占位
                         ConvertAnyDialog.this.removePlaceholder();
-                        // 放置新组件
+                        // 放置新组件：EditorTextField 自带滚动条，直接放入卡片
+                        //（外层再包 JBScrollPane 会形成双层滚动条，超长单行如 Markdown 表格行出现水平滚动条时互相作用，滚动条异常缩小）
                         final EditorTextField editor = ConvertAnyDialog.this.buildEditor(fileType, converted);
                         ConvertAnyDialog.this.editorMap.put(fileType, editor);
-                        ConvertAnyDialog.this.cardPanel.add(new JBScrollPane(editor), fileType.name());
+                        ConvertAnyDialog.this.cardPanel.add(editor, fileType.name());
                         ((CardLayout) ConvertAnyDialog.this.cardPanel.getLayout()).show(ConvertAnyDialog.this.cardPanel, fileType.name());
                         // 重新加载
                         ConvertAnyDialog.this.cardPanel.revalidate();
