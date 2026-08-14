@@ -73,6 +73,11 @@ intellijPlatform {
         version = project.version.toString()
         // sinceBuild 自 IGP 2.14 起默认取目标平台 major build（2026.2 → 262），无需显式声明
         changeNotes = """
+            <b>0.25.0</b>
+            <ul>
+                <li>Schema 校验器支持 \$ref/\$defs：当前文档内 JSON 指针解析（#/ 前缀），支持 \$defs 与 definitions（Draft 兼容别名）、嵌套路径/数组索引、指针段转义（~1/~0）、自引用递归 Schema（树结构）、引用环与超长链截断防死循环、\$ref 与兄弟关键字共存（2020-12 语义）；非法/外部引用报失败项不中断校验。</li>
+                <li>新增 12 个单元测试（总 577 全绿）。</li>
+            </ul>
             <b>0.24.0</b>
             <ul>
                 <li>新增 JSON → TypeScript interface 转换：嵌套对象/数组平铺为独立 interface，类型映射（string/number/boolean/any/数组）。</li>

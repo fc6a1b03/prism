@@ -499,4 +499,145 @@ class JsonSchemaValidatorTest {
         );
         assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("dependentSchemas")));
     }
+
+    @Test
+    @DisplayName("正常：$ref 引用 $defs 定义校验通过")
+    void passesRefToDefs() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"user\":{\"name\":\"x\",\"age\":18}}",
+                "{\"type\":\"object\",\"properties\":{\"user\":{\"$ref\":\"#/$defs/user\"}},\"$defs\":{\"user\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"age\":{\"type\":\"integer\"}},\"required\":[\"name\"]}}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "$ref 目标约束满足应通过");
+    }
+
+    @Test
+    @DisplayName("异常：$ref 目标约束不满足被检出")
+    void detectsRefConstraintViolation() {
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"user\":{\"age\":18}}",
+                "{\"type\":\"object\",\"properties\":{\"user\":{\"$ref\":\"#/$defs/user\"}},\"$defs\":{\"user\":{\"type\":\"object\",\"required\":[\"name\"]}}}"
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("name")),
+                "$ref 目标 required 缺失应报错");
+    }
+
+    @Test
+    @DisplayName("正常：$ref 与兄弟关键字共存（2020-12 语义）")
+    void refCoexistsWithSiblingKeywords() {
+        // 目标定义 minLength=3，兄弟 maxLength=5：两者合并生效
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"v\":\"abc\"}",
+                "{\"$defs\":{\"len\":{\"minLength\":3}},\"properties\":{\"v\":{\"$ref\":\"#/$defs/len\",\"maxLength\":5}}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "长度 3 在 [3,5] 内应通过");
+
+        final ValidationOutcome tooShort = JsonSchemaValidator.validate(
+                "{\"v\":\"ab\"}",
+                "{\"$defs\":{\"len\":{\"minLength\":3}},\"properties\":{\"v\":{\"$ref\":\"#/$defs/len\",\"maxLength\":5}}}"
+        );
+        assertTrue(tooShort.issues().stream().anyMatch(issue -> issue.message().contains("过短")));
+
+        final ValidationOutcome tooLong = JsonSchemaValidator.validate(
+                "{\"v\":\"abcdef\"}",
+                "{\"$defs\":{\"len\":{\"minLength\":3}},\"properties\":{\"v\":{\"$ref\":\"#/$defs/len\",\"maxLength\":5}}}"
+        );
+        assertTrue(tooLong.issues().stream().anyMatch(issue -> issue.message().contains("过长")));
+    }
+
+    @Test
+    @DisplayName("正常：自引用递归 Schema（树结构）")
+    void supportsSelfReferentialSchema() {
+        final String schema = "{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"integer\"},\"next\":{\"$ref\":\"#\"}}}";
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"value\":1,\"next\":{\"value\":2,\"next\":{\"value\":3}}}",
+                schema
+        );
+        assertTrue(ok.issues().isEmpty(), "自引用递归结构应通过");
+
+        final ValidationOutcome bad = JsonSchemaValidator.validate(
+                "{\"value\":1,\"next\":{\"value\":\"x\"}}",
+                schema
+        );
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("类型不匹配")));
+    }
+
+    @Test
+    @DisplayName("边界：引用环被截断不死循环（A 引 B 且 B 引 A）")
+    void truncatesRefCycle() {
+        final String schema = "{\"$defs\":{\"a\":{\"$ref\":\"#/$defs/b\"},\"b\":{\"$ref\":\"#/$defs/a\",\"type\":\"integer\"}},\"$ref\":\"#/$defs/a\"}";
+        // 环解析 16 层截断，剩余 type=integer 生效；数字通过、字符串失败（不死循环）
+        final ValidationOutcome ok = JsonSchemaValidator.validate("42", schema);
+        assertTrue(ok.issues().isEmpty(), "环截断后整数应通过");
+        final ValidationOutcome bad = JsonSchemaValidator.validate("\"x\"", schema);
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("类型不匹配")));
+    }
+
+    @Test
+    @DisplayName("异常：非法 $ref 报失败项且不中断校验")
+    void reportsUnresolvableRef() {
+        final ValidationOutcome outcome = JsonSchemaValidator.validate(
+                "{\"v\":1}",
+                "{\"properties\":{\"v\":{\"$ref\":\"#/$defs/missing\"}}}"
+        );
+        assertTrue(outcome.issues().stream().anyMatch(issue -> issue.message().contains("$ref")),
+                "无法解析的 $ref 应报失败项");
+    }
+
+    @Test
+    @DisplayName("正常：$ref 指针支持嵌套路径与数组索引")
+    void refSupportsNestedPointer() {
+        final String schema = "{\"properties\":{\"v\":{\"$ref\":\"#/$defs/deep/0\"}},\"$defs\":{\"deep\":[{\"type\":\"integer\"}]}}";
+        final ValidationOutcome ok = JsonSchemaValidator.validate("{\"v\":1}", schema);
+        assertTrue(ok.issues().isEmpty(), "数组索引指针目标应生效");
+        final ValidationOutcome bad = JsonSchemaValidator.validate("{\"v\":\"x\"}", schema);
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("类型不匹配")));
+    }
+
+    @Test
+    @DisplayName("正常：$ref 指针段转义（~1→/，~0→~）")
+    void refDecodesEscapedSegments() {
+        final String schema = "{\"properties\":{\"v\":{\"$ref\":\"#/$defs/a~1b\"}},\"$defs\":{\"a/b\":{\"type\":\"integer\"}}}";
+        final ValidationOutcome ok = JsonSchemaValidator.validate("{\"v\":1}", schema);
+        assertTrue(ok.issues().isEmpty(), "转义段应正确还原并解析");
+    }
+
+    @Test
+    @DisplayName("正常：$ref 引用 definitions（Draft 兼容别名）")
+    void refSupportsDefinitionsAlias() {
+        final ValidationOutcome ok = JsonSchemaValidator.validate(
+                "{\"v\":\"x\"}",
+                "{\"properties\":{\"v\":{\"$ref\":\"#/definitions/name\"}},\"definitions\":{\"name\":{\"type\":\"string\"}}}"
+        );
+        assertTrue(ok.issues().isEmpty(), "definitions 别名应可解析");
+    }
+
+    @Test
+    @DisplayName("异常：数组元素 $ref 递归校验")
+    void refValidatesArrayElements() {
+        final String schema = "{\"properties\":{\"items\":{\"type\":\"array\",\"items\":{\"$ref\":\"#/$defs/item\"}}},\"$defs\":{\"item\":{\"type\":\"object\",\"required\":[\"id\"]}}}";
+        final ValidationOutcome ok = JsonSchemaValidator.validate("{\"items\":[{\"id\":1},{\"id\":2}]}", schema);
+        assertTrue(ok.issues().isEmpty(), "数组元素满足 $ref 目标应通过");
+        final ValidationOutcome bad = JsonSchemaValidator.validate("{\"items\":[{\"id\":1},{\"name\":\"x\"}]}", schema);
+        assertTrue(bad.issues().stream().anyMatch(issue -> issue.message().contains("id")),
+                "缺失 id 的元素应报错");
+    }
+
+    @Test
+    @DisplayName("异常：$ref 指针数组索引越界报失败项而非崩溃")
+    void refOutOfBoundsIndexReportsIssue() {
+        // 越界索引：$defs/a 仅 1 个元素，指针指向索引 5——应报无法解析失败项，不抛异常
+        final String schema = "{\"properties\":{\"v\":{\"$ref\":\"#/$defs/a/5\"}},\"$defs\":{\"a\":[{\"type\":\"integer\"}]}}";
+        final ValidationOutcome outcome = JsonSchemaValidator.validate("{\"v\":1}", schema);
+        assertTrue(outcome.issues().stream().anyMatch(issue -> issue.message().contains("$ref")),
+                "越界索引应报无法解析 $ref 失败项");
+    }
+
+    @Test
+    @DisplayName("异常：$ref 指针负索引报失败项而非崩溃")
+    void refNegativeIndexReportsIssue() {
+        final String schema = "{\"properties\":{\"v\":{\"$ref\":\"#/$defs/a/-1\"}},\"$defs\":{\"a\":[{\"type\":\"integer\"}]}}";
+        final ValidationOutcome outcome = JsonSchemaValidator.validate("{\"v\":1}", schema);
+        assertTrue(outcome.issues().stream().anyMatch(issue -> issue.message().contains("$ref")),
+                "负索引应报无法解析 $ref 失败项");
+    }
 }

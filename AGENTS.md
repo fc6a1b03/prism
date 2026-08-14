@@ -14,7 +14,7 @@
 | Artifact ID | `prism`                                   |
 | 插件 ID     | `com.acme.prism`                          |
 | 作者        | 拒绝者                                          |
-| 当前版本    | `0.18.8`（定义在 `settings.gradle` 的版本表中） |
+| 当前版本    | `0.25.0`（定义在 `settings.gradle` 的版本表中） |
 | 许可证      | MIT                                             |
 | GitHub      | https://github.com/fc6a1b03/prism         |
 
@@ -385,7 +385,7 @@ GitHub Actions 工作流 `.github/workflows/build_jar.yml`：
 private static Map<AnyFile, DataFormatConverter> createConverters() {
     final EnumMap<AnyFile, DataFormatConverter> converters = new EnumMap<>(AnyFile.class);
     register(converters, AnyFile.XML, new XmlConverter());
-    // ... 共 14 个转换器
+    // ... 共 13 个转换器
     return Map.copyOf(converters);
 }
 ```
