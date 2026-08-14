@@ -28,7 +28,7 @@
 - 从 Java 类字段复制 JSON 结构
 - JsonPath / JMESPath 查询与树形浏览
 - URL、JWT、本地文件路径、Web 路径自动解析为 JSON
-- JSON 与 XML / YAML / TOML / Properties / CSV / XLSX / Base64 / URL Params / Markdown 互转
+- JSON 与 XML / YAML / TOML / Properties / CSV / XLSX / Base64 / URL Params / Markdown / TypeScript 互转
 - Search Everywhere 集成：项目搜索、HTTP 请求文件搜索、端口搜索、压缩包内容搜索
 - 项目树中将压缩包（zip / 7z / jar / war / ear / tar / tar.gz / tgz / tar.bz2 / tbz2 / tar.xz / txz / gz / bz2 /
   xz）作为目录展开浏览
@@ -138,7 +138,7 @@ src/main/
 │   │   │       ├── XmlConverter.java / YamlConverter.java / TomlConverter.java
 │   │   │       ├── CsvConverter.java / XlsxConverter.java
 │   │   │       ├── PropertiesConverter.java / Base64Converter.java / UrlParamsConverter.java
-│   │   │       ├── SqlConverter.java / MarkdownTableConverter.java
+│   │   │       ├── SqlConverter.java / MarkdownTableConverter.java / TypeScriptConverter.java
 │   │   │       ├── ClassConverter.java / RecordConverter.java
 │   │   │       └── JavaStructure.java / TableStructure.java  # 结构模型
 │   │   ├── rainbow/               # 彩虹高亮
@@ -385,7 +385,7 @@ GitHub Actions 工作流 `.github/workflows/build_jar.yml`：
 private static Map<AnyFile, DataFormatConverter> createConverters() {
     final EnumMap<AnyFile, DataFormatConverter> converters = new EnumMap<>(AnyFile.class);
     register(converters, AnyFile.XML, new XmlConverter());
-    // ... 共 12 个转换器
+    // ... 共 14 个转换器
     return Map.copyOf(converters);
 }
 ```

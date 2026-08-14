@@ -73,6 +73,12 @@ intellijPlatform {
         version = project.version.toString()
         // sinceBuild 自 IGP 2.14 起默认取目标平台 major build（2026.2 → 262），无需显式声明
         changeNotes = """
+            <b>0.24.0</b>
+            <ul>
+                <li>新增 JSON → TypeScript interface 转换：嵌套对象/数组平铺为独立 interface，类型映射（string/number/boolean/any/数组）。</li>
+                <li>修复转换对话框滚动条：编辑器自带滚动条，去掉外层重复包装（Markdown 表格超长单行触发水平滚动条时双层滚动条互相作用异常缩小）。</li>
+                <li>新增 8 个单元测试（总 565 全绿）。</li>
+            </ul>
             <b>0.23.1</b>
             <ul>
                 <li>修复校验弹窗布局：目标 JSON 区固定高度（超高内部滚动），大 JSON 不再撑高挤掉 Schema 与结果面板。</li>
